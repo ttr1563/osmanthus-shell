@@ -14,6 +14,12 @@ comes from `rm`, Python, Node.js, or another process, while leaving unrelated
 paths usable. The global write hook returns immediately unless at least one root
 enables `write`.
 
+Truncate enforcement uses the pathname and `O_TRUNC` hooks for early rejection,
+then checks `ATTR_SIZE` at the common `inode_setattr` boundary. The final hook is
+required because newer kernels route descriptor-based `ftruncate` through a
+separate `file_truncate` hook while older kernels use a different preliminary
+path; both still reach the inode attribute change before the file size changes.
+
 ## Runtime flow
 
 ```text

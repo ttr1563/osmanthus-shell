@@ -34,6 +34,10 @@ struct file {
     unsigned int f_flags;
 } __attribute__((preserve_access_index));
 
+struct iattr {
+    unsigned int ia_valid;
+} __attribute__((preserve_access_index));
+
 struct vm_area_struct {
     unsigned long vm_flags;
     struct file *vm_file;
@@ -58,6 +62,7 @@ enum osmanthus_boundary_operation {
 };
 
 #define OSMANTHUS_RENAME_EXCHANGE (1U << 1)
+#define OSMANTHUS_ATTR_SIZE (1U << 3)
 #define OSMANTHUS_MODE_TYPE_MASK 0170000
 #define OSMANTHUS_MODE_DIRECTORY 0040000
 
@@ -451,6 +456,22 @@ int BPF_PROG(osmanthus_path_truncate, const struct path *path, int ret)
     if (ret)
         return ret;
     return guard_dentry(BPF_CORE_READ(path, dentry), OSMANTHUS_TRUNCATE);
+}
+
+SEC("lsm/inode_setattr")
+int BPF_PROG(osmanthus_inode_setattr, struct dentry *dentry,
+             struct iattr *attr, int ret)
+{
+    unsigned int valid;
+
+    if (ret)
+        return ret;
+    if (!attr)
+        return 0;
+    valid = BPF_CORE_READ(attr, ia_valid);
+    if (!(valid & OSMANTHUS_ATTR_SIZE))
+        return 0;
+    return guard_dentry(dentry, OSMANTHUS_TRUNCATE);
 }
 
 SEC("lsm/file_open")

@@ -64,27 +64,36 @@ impl PersistentLinuxBpfBackend {
         validate_pin_directory(pin_directory)?;
         recover_upgrade_pins()?;
 
-        let expected = [
-            METADATA_MAP,
-            PROTECTED_ROOTS_MAP,
-            PROTECTED_BOUNDARIES_MAP,
-            MAINTENANCE_LEASES_MAP,
-            MONITORED_UIDS_MAP,
-            EVENTS_MAP,
-        ]
-        .into_iter()
-        .chain(LINK_PATHS)
-        .collect::<Vec<_>>();
-        let existing = expected
+        let existing_maps = MAP_PATHS
             .iter()
             .filter(|path| Path::new(path).exists())
             .count();
-        if existing != 0 && existing != expected.len() {
+        let existing_links = LINK_PATHS
+            .iter()
+            .filter(|path| Path::new(path).exists())
+            .count();
+        if existing_maps != 0 && existing_maps != MAP_PATHS.len() {
             return Err(OsmanthusError::InvalidState(format!(
                 "incomplete persistent BPF state in {PIN_DIRECTORY}; refusing partial enforcement recovery"
             )));
         }
-        if existing == 0 {
+        if existing_maps == MAP_PATHS.len() {
+            let version = pinned_abi_version()?;
+            if version != BPF_ABI_VERSION {
+                return Err(OsmanthusError::InvalidState(format!(
+                    "persistent BPF ABI is incompatible; expected version {BPF_ABI_VERSION}, found {version}; keeping existing enforcement attached"
+                )));
+            }
+        }
+        if existing_maps == 0 && existing_links != 0
+            || existing_maps == MAP_PATHS.len() && existing_links != LINK_PATHS.len()
+        {
+            return Err(OsmanthusError::InvalidState(format!(
+                "incomplete persistent BPF state in {PIN_DIRECTORY}; refusing partial enforcement recovery"
+            )));
+        }
+        let fresh_install = existing_maps == 0;
+        if fresh_install {
             let install_result = (|| -> Result<()> {
                 let mut object = MaybeUninit::<OpenObject>::uninit();
                 let mut session = LinuxBpfSession::load(&mut object, policy)?;
@@ -115,7 +124,7 @@ impl PersistentLinuxBpfBackend {
                 .map_err(bpf_error("open event BPF map"))?,
         };
         backend.validate_maps()?;
-        if existing == expected.len() {
+        if !fresh_install {
             upgrade_pinned_programs()?;
         }
         backend.replace_policy(policy)?;
@@ -362,27 +371,34 @@ fn upgrade_pinned_programs() -> Result<()> {
             &mut skeleton.links.osmanthus_path_truncate,
             NEXT_LINK_PATHS[4],
         )?;
-        pin_link(&mut skeleton.links.osmanthus_file_open, NEXT_LINK_PATHS[5])?;
+        pin_link(
+            &mut skeleton.links.osmanthus_inode_setattr,
+            NEXT_LINK_PATHS[5],
+        )?;
+        pin_link(&mut skeleton.links.osmanthus_file_open, NEXT_LINK_PATHS[6])?;
         pin_link(
             &mut skeleton.links.osmanthus_file_permission,
-            NEXT_LINK_PATHS[6],
+            NEXT_LINK_PATHS[7],
         )?;
-        pin_link(&mut skeleton.links.osmanthus_mmap_file, NEXT_LINK_PATHS[7])?;
+        pin_link(&mut skeleton.links.osmanthus_mmap_file, NEXT_LINK_PATHS[8])?;
         pin_link(
             &mut skeleton.links.osmanthus_file_mprotect,
-            NEXT_LINK_PATHS[8],
+            NEXT_LINK_PATHS[9],
         )?;
-        pin_link(&mut skeleton.links.osmanthus_path_chmod, NEXT_LINK_PATHS[9])?;
         pin_link(
-            &mut skeleton.links.osmanthus_path_chown,
+            &mut skeleton.links.osmanthus_path_chmod,
             NEXT_LINK_PATHS[10],
         )?;
-        pin_link(&mut skeleton.links.osmanthus_execve, NEXT_LINK_PATHS[11])?;
-        pin_link(&mut skeleton.links.osmanthus_execveat, NEXT_LINK_PATHS[12])?;
-        pin_link(&mut skeleton.links.osmanthus_sb_mount, NEXT_LINK_PATHS[13])?;
+        pin_link(
+            &mut skeleton.links.osmanthus_path_chown,
+            NEXT_LINK_PATHS[11],
+        )?;
+        pin_link(&mut skeleton.links.osmanthus_execve, NEXT_LINK_PATHS[12])?;
+        pin_link(&mut skeleton.links.osmanthus_execveat, NEXT_LINK_PATHS[13])?;
+        pin_link(&mut skeleton.links.osmanthus_sb_mount, NEXT_LINK_PATHS[14])?;
         pin_link(
             &mut skeleton.links.osmanthus_move_mount,
-            NEXT_LINK_PATHS[14],
+            NEXT_LINK_PATHS[15],
         )?;
         Ok(())
     })();
@@ -436,7 +452,7 @@ impl crate::daemon::EnforcementBackend for PersistentLinuxBpfBackend {
 use skeleton::{OsmanthusLsmSkel, OsmanthusLsmSkelBuilder};
 
 const ENABLED: [u8; 1] = [1];
-const BPF_ABI_VERSION: u32 = 4;
+const BPF_ABI_VERSION: u32 = 5;
 const LEGACY_PIN_DIRECTORY: &str = "/sys/fs/bpf/onyx";
 pub const PIN_DIRECTORY: &str = "/sys/fs/bpf/osmanthus";
 const METADATA_MAP: &str = "/sys/fs/bpf/osmanthus/metadata";
@@ -445,12 +461,21 @@ const PROTECTED_BOUNDARIES_MAP: &str = "/sys/fs/bpf/osmanthus/protected_boundari
 const MAINTENANCE_LEASES_MAP: &str = "/sys/fs/bpf/osmanthus/maintenance_leases";
 const MONITORED_UIDS_MAP: &str = "/sys/fs/bpf/osmanthus/monitored_uids";
 const EVENTS_MAP: &str = "/sys/fs/bpf/osmanthus/events";
-const LINK_PATHS: [&str; 15] = [
+const MAP_PATHS: [&str; 6] = [
+    METADATA_MAP,
+    PROTECTED_ROOTS_MAP,
+    PROTECTED_BOUNDARIES_MAP,
+    MAINTENANCE_LEASES_MAP,
+    MONITORED_UIDS_MAP,
+    EVENTS_MAP,
+];
+const LINK_PATHS: [&str; 16] = [
     "/sys/fs/bpf/osmanthus/path_unlink",
     "/sys/fs/bpf/osmanthus/path_rmdir",
     "/sys/fs/bpf/osmanthus/path_link",
     "/sys/fs/bpf/osmanthus/path_rename",
     "/sys/fs/bpf/osmanthus/path_truncate",
+    "/sys/fs/bpf/osmanthus/inode_setattr",
     "/sys/fs/bpf/osmanthus/file_open",
     "/sys/fs/bpf/osmanthus/file_permission",
     "/sys/fs/bpf/osmanthus/mmap_file",
@@ -462,12 +487,13 @@ const LINK_PATHS: [&str; 15] = [
     "/sys/fs/bpf/osmanthus/sb_mount",
     "/sys/fs/bpf/osmanthus/move_mount",
 ];
-const NEXT_LINK_PATHS: [&str; 15] = [
+const NEXT_LINK_PATHS: [&str; 16] = [
     "/sys/fs/bpf/osmanthus/next_path_unlink",
     "/sys/fs/bpf/osmanthus/next_path_rmdir",
     "/sys/fs/bpf/osmanthus/next_path_link",
     "/sys/fs/bpf/osmanthus/next_path_rename",
     "/sys/fs/bpf/osmanthus/next_path_truncate",
+    "/sys/fs/bpf/osmanthus/next_inode_setattr",
     "/sys/fs/bpf/osmanthus/next_file_open",
     "/sys/fs/bpf/osmanthus/next_file_permission",
     "/sys/fs/bpf/osmanthus/next_mmap_file",
@@ -710,27 +736,34 @@ impl<'object> LinuxBpfSession<'object> {
             &mut self.skeleton.links.osmanthus_path_truncate,
             LINK_PATHS[4],
         )?;
-        pin_link(&mut self.skeleton.links.osmanthus_file_open, LINK_PATHS[5])?;
+        pin_link(
+            &mut self.skeleton.links.osmanthus_inode_setattr,
+            LINK_PATHS[5],
+        )?;
+        pin_link(&mut self.skeleton.links.osmanthus_file_open, LINK_PATHS[6])?;
         pin_link(
             &mut self.skeleton.links.osmanthus_file_permission,
-            LINK_PATHS[6],
+            LINK_PATHS[7],
         )?;
-        pin_link(&mut self.skeleton.links.osmanthus_mmap_file, LINK_PATHS[7])?;
+        pin_link(&mut self.skeleton.links.osmanthus_mmap_file, LINK_PATHS[8])?;
         pin_link(
             &mut self.skeleton.links.osmanthus_file_mprotect,
-            LINK_PATHS[8],
+            LINK_PATHS[9],
         )?;
-        pin_link(&mut self.skeleton.links.osmanthus_path_chmod, LINK_PATHS[9])?;
         pin_link(
-            &mut self.skeleton.links.osmanthus_path_chown,
+            &mut self.skeleton.links.osmanthus_path_chmod,
             LINK_PATHS[10],
         )?;
-        pin_link(&mut self.skeleton.links.osmanthus_execve, LINK_PATHS[11])?;
-        pin_link(&mut self.skeleton.links.osmanthus_execveat, LINK_PATHS[12])?;
-        pin_link(&mut self.skeleton.links.osmanthus_sb_mount, LINK_PATHS[13])?;
+        pin_link(
+            &mut self.skeleton.links.osmanthus_path_chown,
+            LINK_PATHS[11],
+        )?;
+        pin_link(&mut self.skeleton.links.osmanthus_execve, LINK_PATHS[12])?;
+        pin_link(&mut self.skeleton.links.osmanthus_execveat, LINK_PATHS[13])?;
+        pin_link(&mut self.skeleton.links.osmanthus_sb_mount, LINK_PATHS[14])?;
         pin_link(
             &mut self.skeleton.links.osmanthus_move_mount,
-            LINK_PATHS[14],
+            LINK_PATHS[15],
         )?;
         Ok(())
     }
@@ -1030,6 +1063,36 @@ fn validate_pin_directory(path: &Path) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn pinned_abi_version() -> Result<u32> {
+    let metadata = MapHandle::from_pinned_path(METADATA_MAP)
+        .map_err(bpf_error("open persistent BPF metadata map"))?;
+    if metadata.map_type() != libbpf_rs::MapType::Array
+        || metadata.key_size() != 4
+        || metadata.value_size() != 4
+        || metadata.max_entries() != 2
+    {
+        return Err(OsmanthusError::InvalidState(
+            "persistent metadata BPF map has an incompatible schema".to_owned(),
+        ));
+    }
+    let value = metadata
+        .lookup(&0_u32.to_ne_bytes(), MapFlags::ANY)
+        .map_err(bpf_error("read persistent BPF ABI version"))?
+        .ok_or_else(|| {
+            OsmanthusError::InvalidState(
+                "persistent BPF ABI version is missing; keeping existing enforcement attached"
+                    .to_owned(),
+            )
+        })?;
+    let bytes: [u8; 4] = value.try_into().map_err(|_| {
+        OsmanthusError::InvalidState(
+            "persistent BPF ABI version has an invalid size; keeping existing enforcement attached"
+                .to_owned(),
+        )
+    })?;
+    Ok(u32::from_ne_bytes(bytes))
 }
 
 fn remove_created_pins() {

@@ -26,9 +26,11 @@ fn main() -> osmanthus_guard::Result<()> {
     let temporary = TempDir::new_in("/var/tmp")?;
     let protected = temporary.path().join("protected");
     let topology_protected = temporary.path().join("topology-protected");
+    let truncate_protected = temporary.path().join("truncate-protected");
     let outside = temporary.path().join("outside");
     fs::create_dir_all(&protected)?;
     fs::create_dir_all(&topology_protected)?;
+    fs::create_dir_all(&truncate_protected)?;
     fs::create_dir_all(&outside)?;
     let blocked_mount = protected.join("blocked-mount");
     fs::create_dir(&blocked_mount)?;
@@ -46,17 +48,25 @@ fn main() -> osmanthus_guard::Result<()> {
         &topology_protected,
         BTreeSet::from([ProtectedAction::Delete]),
     )?;
+    let truncate_root = ProtectedRoot::new(
+        &truncate_protected,
+        BTreeSet::from([ProtectedAction::Truncate]),
+    )?;
     let monitored_uid = std::env::var("SUDO_UID")
         .ok()
         .and_then(|value| value.parse().ok())
         .filter(|uid| *uid != 0)
         .unwrap_or(65_534);
-    let policy =
-        EnforcementPolicy::from_parts(vec![root, topology_root], BTreeSet::from([monitored_uid]))?;
+    let policy = EnforcementPolicy::from_parts(
+        vec![root, topology_root, truncate_root],
+        BTreeSet::from([monitored_uid]),
+    )?;
 
     let blocked_delete = protected.join("blocked-delete");
-    let blocked_truncate = protected.join("blocked-truncate");
-    let blocked_direct_truncate = protected.join("blocked-direct-truncate");
+    let blocked_truncate = truncate_protected.join("blocked-open-truncate");
+    let blocked_path_truncate = truncate_protected.join("blocked-path-truncate");
+    let blocked_direct_truncate = truncate_protected.join("blocked-ftruncate");
+    let allowed_non_truncating_write = truncate_protected.join("allowed-write");
     let blocked_link_source = protected.join("blocked-link-source");
     let protected_marker = protected.join("protected-marker");
     let outside_link_source = outside.join("outside-link-source");
@@ -83,13 +93,15 @@ fn main() -> osmanthus_guard::Result<()> {
     let mut excessive_depth = outside.clone();
     for depth in 0..260 {
         excessive_depth.push(format!("x{depth}"));
+        fs::create_dir(&excessive_depth)?;
     }
-    fs::create_dir_all(&excessive_depth)?;
     let excessive_depth_file = excessive_depth.join("fail-closed-delete");
     for path in [
         &blocked_delete,
         &blocked_truncate,
+        &blocked_path_truncate,
         &blocked_direct_truncate,
+        &allowed_non_truncating_write,
         &blocked_link_source,
         &protected_marker,
         &blocked_rename,
@@ -151,6 +163,23 @@ fn main() -> osmanthus_guard::Result<()> {
         ));
     }
 
+    let blocked_path_truncate_c =
+        std::ffi::CString::new(blocked_path_truncate.as_os_str().as_encoded_bytes()).unwrap();
+    let path_truncate_result = unsafe { libc::truncate(blocked_path_truncate_c.as_ptr(), 0) };
+    expect_permission_denied(
+        if path_truncate_result == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        },
+        "path truncate",
+    )?;
+    if fs::read(&blocked_path_truncate)? != b"kept" {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "blocked path truncate changed the target".to_owned(),
+        ));
+    }
+
     let direct_truncate = OpenOptions::new()
         .write(true)
         .open(&blocked_direct_truncate)?;
@@ -158,6 +187,16 @@ fn main() -> osmanthus_guard::Result<()> {
     if fs::read(&blocked_direct_truncate)? != b"kept" {
         return Err(osmanthus_guard::OsmanthusError::InvalidState(
             "blocked direct truncate changed the target".to_owned(),
+        ));
+    }
+
+    let mut allowed_write = OpenOptions::new()
+        .write(true)
+        .open(&allowed_non_truncating_write)?;
+    allowed_write.write_all(b"pass")?;
+    if fs::read(&allowed_non_truncating_write)? != b"pass" {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "truncate-only root blocked or changed a non-truncating write".to_owned(),
         ));
     }
 

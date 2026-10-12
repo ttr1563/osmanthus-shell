@@ -73,8 +73,19 @@ fn main() -> osmanthus_guard::Result<()> {
                 "open test BPF metadata map: {error}"
             ))
         })?;
+    let mut legacy_truncate_link =
+        Link::open("/sys/fs/bpf/osmanthus/inode_setattr").map_err(|error| {
+            osmanthus_guard::OsmanthusError::InvalidState(format!(
+                "open test inode-setattr BPF link: {error}"
+            ))
+        })?;
+    legacy_truncate_link.unpin().map_err(|error| {
+        osmanthus_guard::OsmanthusError::InvalidState(format!(
+            "simulate the ABI 4 BPF link set: {error}"
+        ))
+    })?;
     metadata
-        .update(&0_u32.to_ne_bytes(), &5_u32.to_ne_bytes(), MapFlags::ANY)
+        .update(&0_u32.to_ne_bytes(), &4_u32.to_ne_bytes(), MapFlags::ANY)
         .map_err(|error| {
             osmanthus_guard::OsmanthusError::InvalidState(format!(
                 "write incompatible test BPF ABI: {error}"
@@ -100,10 +111,18 @@ fn main() -> osmanthus_guard::Result<()> {
         }
     }
     metadata
-        .update(&0_u32.to_ne_bytes(), &4_u32.to_ne_bytes(), MapFlags::ANY)
+        .update(&0_u32.to_ne_bytes(), &5_u32.to_ne_bytes(), MapFlags::ANY)
         .map_err(|error| {
             osmanthus_guard::OsmanthusError::InvalidState(format!("restore test BPF ABI: {error}"))
         })?;
+    legacy_truncate_link
+        .pin("/sys/fs/bpf/osmanthus/inode_setattr")
+        .map_err(|error| {
+            osmanthus_guard::OsmanthusError::InvalidState(format!(
+                "restore test inode-setattr BPF link: {error}"
+            ))
+        })?;
+    drop(legacy_truncate_link);
     drop(metadata);
 
     let mut reopened = PersistentLinuxBpfBackend::install_or_open(&policy)?;
