@@ -54,6 +54,72 @@ the intended managed instances. Deny operators `ssm:UpdateDocument` and
 `ssm:DeleteDocument` for it. Otherwise an operator can select or alter a
 Session document that does not start `osmanthus-shell`.
 
+For an AWS CLI operator, the following is a starting policy. Replace every
+uppercase placeholder. Keep document administration on a different role; do
+not grant this operator `ssm:CreateDocument`, `ssm:UpdateDocument`,
+`ssm:UpdateDocumentDefaultVersion`, or `ssm:DeleteDocument` through another
+policy. The explicit deny protects the Osmanthus document even if a broader
+allow is attached later.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StartOnlyOsmanthusSession",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": [
+        "arn:aws:ec2:REGION:ACCOUNT_ID:instance/INSTANCE_ID",
+        "arn:aws:ssm:REGION:ACCOUNT_ID:document/OsmanthusSessionShell"
+      ]
+    },
+    {
+      "Sid": "OpenOwnSessionDataChannel",
+      "Effect": "Allow",
+      "Action": "ssmmessages:OpenDataChannel",
+      "Resource": "arn:aws:ssm:*:*:session/${aws:userid}-*"
+    },
+    {
+      "Sid": "ResumeOrTerminateOwnSession",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:ResumeSession",
+        "ssm:TerminateSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/${aws:userid}-*"
+    },
+    {
+      "Sid": "ReadSessionTargetStatus",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetConnectionStatus",
+        "ssm:DescribeInstanceInformation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ProtectOsmanthusSessionDocument",
+      "Effect": "Deny",
+      "Action": [
+        "ssm:UpdateDocument",
+        "ssm:UpdateDocumentDefaultVersion",
+        "ssm:DeleteDocument"
+      ],
+      "Resource": "arn:aws:ssm:REGION:ACCOUNT_ID:document/OsmanthusSessionShell"
+    }
+  ]
+}
+```
+
+Evaluate the operator's effective permissions, including group policies,
+permission boundaries, session policies, and organization SCPs. Do not grant a
+second `ssm:StartSession` allow for `SSM-SessionManagerRunShell`,
+`AWS-StartSSHSession`, port-forwarding documents, or `document/*`: those entry
+points do not execute the Osmanthus PTY supervisor. Kernel protected-root
+enforcement still applies host-wide, but the Osmanthus shell transcript does
+not exist for a bypassing entry point.
+
 The AWS account administrator must also decide whether Session Manager's own
 S3 or CloudWatch logging is required. Those settings are separate from Osmanthus's
 local `/var/log/osmanthus/audit.jsonl` evidence.
@@ -76,6 +142,8 @@ AWS references:
 
 - [Configurable shell profiles](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-preferences-shell-config.html)
 - [Session document schema](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-schema.html)
+- [Session Manager IAM policy examples](https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-restrict-access-quickstart.html)
+- [Starting a session with a specific document](https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-specify-session-document.html)
 
 ## Remove the integration
 
