@@ -97,6 +97,9 @@ boundary cannot bypass policy.
 
 ### Windows Server — required native target
 
+- This is a separate design, implementation, artifact, and native-test track;
+  see [windows-server.md](windows-server.md). It is not a Linux release gate and
+  it is not currently implemented.
 - Managed entry points: PowerShell, `cmd.exe`, WinRM, RDP-launched terminals,
   Scheduled Tasks, and enrolled Windows services.
 - Service management: a Windows Service running under a privileged service

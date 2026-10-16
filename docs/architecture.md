@@ -145,6 +145,9 @@ their ring-buffer or audit failure does not synchronously deny every new exec.
   enforcement remains attached. Such an upgrade requires the documented
   maintenance/decommission/fresh-attach procedure.
 - Native Windows Server interception/service integration is not implemented.
+  Its separate driver, service, packaging, and native-test contract is documented
+  in [windows-server.md](windows-server.md); no Linux fallback is presented as
+  Windows enforcement.
 
 These are release blockers, not hidden fallback behavior. The authoritative
 acceptance criteria are in [enforcement-requirements.md](enforcement-requirements.md).

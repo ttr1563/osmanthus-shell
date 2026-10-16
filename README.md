@@ -282,7 +282,10 @@ repository publication follows candidate acceptance and its observation period.
 These gates apply to the Linux release. A native Windows Server service/backend
 and Windows Server tests are a separate platform track; Windows support is not
 advertised until they pass. macOS native enforcement is deferred. WSL is Linux
-enforcement and is not a substitute for Windows Server support.
+enforcement and is not a substitute for Windows Server support. The separate
+[Windows Server native track](docs/windows-server.md) defines its driver,
+service, packaging, test-environment, and acceptance boundaries without making
+a current support claim.
 
 ## Development checks
 
