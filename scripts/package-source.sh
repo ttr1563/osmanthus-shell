@@ -6,7 +6,7 @@ repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
 source scripts/package-version.sh
 
-manifest_version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
+manifest_version="$(git show HEAD:Cargo.toml | awk -F '"' '/^version = "/ { print $2; exit }')"
 if [[ "$version" != "$manifest_version" ]]; then
   echo "version $version does not match Cargo.toml $manifest_version" >&2
   exit 1
@@ -18,19 +18,12 @@ mkdir -p "$(dirname "$output")"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 
-git ls-files -z | grep -zvE '^(Formula/|docs/(apt|rpm)/)' > "$temporary/files"
-tar \
-  --null \
-  --files-from="$temporary/files" \
-  --sort=name \
-  --format=posix \
-  --mtime='@0' \
-  --owner=0 \
-  --group=0 \
-  --numeric-owner \
-  --pax-option=delete=atime,delete=ctime \
-  --transform="s|^|osmanthus-${version}/|" \
-  -cf "$temporary/source.tar"
+git archive \
+  --format=tar \
+  --prefix="osmanthus-${version}/" \
+  HEAD \
+  -- . ':(exclude)Formula' ':(exclude)docs/apt' ':(exclude)docs/rpm' \
+  > "$temporary/source.tar"
 gzip -n -9 < "$temporary/source.tar" > "$output"
 
 sha256sum "$output"
