@@ -28,7 +28,7 @@ if [[ "$version" != "$manifest_version" ]]; then
   exit 1
 fi
 parse_osmanthus_package_version "$version"
-for command in cargo realpath rpmbuild rpm; do
+for command in basename cargo find grep install realpath rpmbuild rpm; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -43,6 +43,14 @@ case "$architecture" in
     exit 1
     ;;
 esac
+package_dir="$output_root/$architecture/Packages"
+if [[ -d "$package_dir" ]] \
+  && find "$package_dir" -maxdepth 1 -type f \
+    -name "osmanthus-${OSMANTHUS_RPM_VERSION}-${OSMANTHUS_RPM_RELEASE}*.${architecture}.rpm" \
+    -print -quit | grep -q .; then
+  echo "release artifact already exists; use a new version instead of replacing it" >&2
+  exit 1
+fi
 
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
@@ -70,17 +78,18 @@ SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
     --define "_build_id_links none" \
     -bb "$topdir/SPECS/osmanthus.spec"
 
-package_dir="$output_root/$architecture/Packages"
 mkdir -p "$package_dir"
 test "$(git rev-parse --verify HEAD)" = "$build_commit"
 require_clean_osmanthus_worktree
-find "$topdir/RPMS/$architecture" -maxdepth 1 -type f -name 'osmanthus-*.rpm' \
-  -exec install -m0644 {} "$package_dir/" \;
-
-package="$(find "$package_dir" -maxdepth 1 -type f -name "osmanthus-${OSMANTHUS_RPM_VERSION}-${OSMANTHUS_RPM_RELEASE}*.${architecture}.rpm" -print -quit)"
-if [[ -z "$package" ]]; then
+built_package="$(find "$topdir/RPMS/$architecture" -maxdepth 1 -type f \
+  -name "osmanthus-${OSMANTHUS_RPM_VERSION}-${OSMANTHUS_RPM_RELEASE}*.${architecture}.rpm" \
+  -print -quit)"
+if [[ -z "$built_package" ]]; then
   echo "RPM output was not created" >&2
   exit 1
 fi
+package="$package_dir/$(basename "$built_package")"
+require_new_osmanthus_artifact "$package"
+install -m0644 "$built_package" "$package"
 rpm --checksig "$package"
 sha256sum "$package"

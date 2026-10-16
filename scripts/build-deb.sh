@@ -28,7 +28,7 @@ if [[ "$version" != "$manifest_version" ]]; then
   exit 1
 fi
 parse_osmanthus_package_version "$version"
-for command in ar awk cargo du find gzip install md5sum realpath sort tar uname xargs; do
+for command in ar awk basename cargo du find gzip install md5sum realpath sort tar uname xargs; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -46,6 +46,8 @@ case "$(uname -m)" in
     exit 1
     ;;
 esac
+package="$output_root/osmanthus_${OSMANTHUS_DEB_VERSION}_${deb_architecture}.deb"
+require_new_osmanthus_artifact "$package"
 
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
@@ -162,7 +164,6 @@ tar \
   -czf "$temporary/data.tar.gz" .
 
 mkdir -p "$output_root"
-package="$output_root/osmanthus_${OSMANTHUS_DEB_VERSION}_${deb_architecture}.deb"
 temporary_package="$temporary/$(basename "$package")"
 (
   cd "$temporary"
@@ -170,6 +171,7 @@ temporary_package="$temporary/$(basename "$package")"
 )
 test "$(git rev-parse --verify HEAD)" = "$build_commit"
 require_clean_osmanthus_worktree
+require_new_osmanthus_artifact "$package"
 install -m0644 "$temporary_package" "$package"
 
 ar t "$package"

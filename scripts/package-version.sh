@@ -39,3 +39,12 @@ require_clean_osmanthus_worktree() {
     return 1
   fi
 }
+
+require_new_osmanthus_artifact() {
+  local path="${1:?artifact path is required}"
+
+  if [[ -e "$path" || -L "$path" ]]; then
+    echo "release artifact already exists; use a new version instead of replacing it: $path" >&2
+    return 1
+  fi
+}

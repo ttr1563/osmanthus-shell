@@ -57,6 +57,11 @@ scripts/build-deb.sh 0.2.0-rc.1 dist/deb
 scripts/test-deb.sh 0.2.0-rc.1 dist/deb
 ```
 
+The package builder requires a committed clean worktree and refuses to replace
+an existing same-version artifact. Remove disposable local test output
+explicitly before rebuilding it; for any published or accepted artifact, use a
+new RC or patch version instead.
+
 Place accepted artifacts below `docs/apt/pool/main/o/osmanthus/` only on the
 release branch. Use a dedicated Osmanthus package-signing key. The private key,
 passphrase, TOTP values, and audit records must never enter Git, command-line

@@ -53,3 +53,17 @@ fi
     exit 1
   fi
 )
+
+artifact="$temporary/osmanthus-package"
+require_new_osmanthus_artifact "$artifact"
+printf 'immutable\n' > "$artifact"
+if require_new_osmanthus_artifact "$artifact" 2>/dev/null; then
+  echo 'existing release artifact was accepted for replacement' >&2
+  exit 1
+fi
+link="$temporary/osmanthus-package-link"
+ln -s missing "$link"
+if require_new_osmanthus_artifact "$link" 2>/dev/null; then
+  echo 'symlink release artifact was accepted for replacement' >&2
+  exit 1
+fi

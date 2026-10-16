@@ -101,7 +101,8 @@ upgrade, or uninstall test. The public DNF/APT repositories are not updated by
 these commands. Binary package builders require a committed, clean worktree at
 both the start of the build and immediately before artifact placement; this
 prevents reviewed source archives and binaries from representing different
-inputs. The source archive is generated from committed `HEAD`, not the working
+inputs. They also refuse to replace an existing same-version artifact; publish a
+new version instead. The source archive is generated from committed `HEAD`, not the working
 tree, and its test requires two byte-identical builds while excluding historical
 package repositories, build output, and the legacy Homebrew formula.
 The deb builder maps native Linux `x86_64` to Debian `amd64` and `aarch64` to
