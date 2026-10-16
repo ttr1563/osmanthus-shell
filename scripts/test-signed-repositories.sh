@@ -43,6 +43,18 @@ export OSMANTHUS_GPG_PUBLIC_KEY="$public_key"
 scripts/build-apt-repository.sh "$apt_root"
 scripts/verify-apt-repository.sh "$apt_root"
 scripts/build-rpm-repository.sh "$rpm_root"
+(
+  cd "$rpm_root"
+  {
+    printf '%s\n' osmanthus-release-1-1.noarch.rpm
+    find al2023 -type f -name 'osmanthus-*.rpm' -print | sort
+  } | xargs sha256sum > "$temporary/rpm-package-checksums"
+)
+scripts/build-rpm-repository.sh "$rpm_root"
+(
+  cd "$rpm_root"
+  sha256sum --check "$temporary/rpm-package-checksums"
+)
 scripts/verify-rpm-repository.sh \
   "$rpm_root/al2023/$(rpm --eval '%{_target_cpu}')" \
   "$rpm_root/RPM-GPG-KEY-OSMANTHUS"

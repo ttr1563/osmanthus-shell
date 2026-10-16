@@ -69,6 +69,12 @@ the signed checksum manifest, RPM identities, and a DNF metadata refresh from
 an isolated install root. Keep the private key and passphrase outside Git,
 shell arguments, artifacts, and logs.
 
+Repository regeneration signs only previously unsigned packages. An existing
+package or bootstrap RPM must already verify with the configured Osmanthus key;
+otherwise generation stops instead of replacing its signature. The ephemeral
+repository test runs generation twice and confirms that every package checksum
+is unchanged.
+
 ## Clean-host release gate
 
 On every advertised architecture:

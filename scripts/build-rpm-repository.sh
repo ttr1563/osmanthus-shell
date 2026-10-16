@@ -3,6 +3,7 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/package-version.sh
 output_root="${1:-docs/rpm}"
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
@@ -59,15 +60,26 @@ done
 
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
-topdir="$temporary/rpmbuild"
-mkdir -p "$topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-install -m0644 packaging/rpm/osmanthus.repo "$topdir/SOURCES/osmanthus.repo"
-install -m0644 "$key_file" "$topdir/SOURCES/RPM-GPG-KEY-OSMANTHUS"
-install -m0644 packaging/rpm/osmanthus-release.spec "$topdir/SPECS/osmanthus-release.spec"
-rpmbuild --define "_topdir $topdir" -bb "$topdir/SPECS/osmanthus-release.spec"
-bootstrap_package="$(find "$topdir/RPMS/noarch" -maxdepth 1 -type f \
-  -name 'osmanthus-release-*.noarch.rpm' -print -quit)"
-test -n "$bootstrap_package"
+bootstrap_output="$output_root/osmanthus-release-1-1.noarch.rpm"
+new_bootstrap=0
+if [[ -e "$bootstrap_output" || -L "$bootstrap_output" ]]; then
+  if [[ ! -f "$bootstrap_output" || -L "$bootstrap_output" ]]; then
+    echo "existing Osmanthus bootstrap package is not a regular file" >&2
+    exit 1
+  fi
+  bootstrap_package="$bootstrap_output"
+else
+  topdir="$temporary/rpmbuild"
+  mkdir -p "$topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+  install -m0644 packaging/rpm/osmanthus.repo "$topdir/SOURCES/osmanthus.repo"
+  install -m0644 "$key_file" "$topdir/SOURCES/RPM-GPG-KEY-OSMANTHUS"
+  install -m0644 packaging/rpm/osmanthus-release.spec "$topdir/SPECS/osmanthus-release.spec"
+  rpmbuild --define "_topdir $topdir" -bb "$topdir/SPECS/osmanthus-release.spec"
+  bootstrap_package="$(find "$topdir/RPMS/noarch" -maxdepth 1 -type f \
+    -name 'osmanthus-release-*.noarch.rpm' -print -quit)"
+  test -n "$bootstrap_package"
+  new_bootstrap=1
+fi
 
 signing_arguments=(
   --define "_gpg_name $signing_key"
@@ -89,14 +101,32 @@ if [[ -n "$passphrase_file" ]]; then
   gpg_arguments+=(--pinentry-mode loopback --passphrase-file "$passphrase_file")
 fi
 
+ensure_package_signed() {
+  local package="${1:?RPM package is required}"
+  local signatures
+
+  signatures="$(rpm --query --package "$package" \
+    --queryformat '%{RSAHEADER}%{DSAHEADER}%{SIGPGP}%{SIGGPG}' 2>/dev/null)"
+  if [[ "$signatures" = '(none)(none)(none)(none)' ]]; then
+    GNUPGHOME="$gpg_home" rpmsign "${signing_arguments[@]}" --addsign "$package"
+  fi
+  if ! rpm --dbpath "$verification_db" --checksig "$package"; then
+    echo "existing RPM signature is not valid for the configured Osmanthus key: $package" >&2
+    return 1
+  fi
+}
+
 for package_directory in "${package_directories[@]}"; do
   for package in "$package_directory"/osmanthus-*.rpm; do
-    GNUPGHOME="$gpg_home" rpmsign "${signing_arguments[@]}" --addsign "$package"
-    rpm --dbpath "$verification_db" --checksig "$package"
+    ensure_package_signed "$package"
   done
 done
-GNUPGHOME="$gpg_home" rpmsign "${signing_arguments[@]}" --addsign "$bootstrap_package"
-rpm --dbpath "$verification_db" --checksig "$bootstrap_package"
+ensure_package_signed "$bootstrap_package"
+if [[ "$new_bootstrap" -eq 1 ]]; then
+  require_new_osmanthus_artifact "$bootstrap_output"
+  install -m0644 "$bootstrap_package" "$bootstrap_output"
+  bootstrap_package="$bootstrap_output"
+fi
 
 for package_directory in "${package_directories[@]}"; do
   architecture="$(basename "$(dirname "$package_directory")")"
@@ -111,7 +141,6 @@ for package_directory in "${package_directories[@]}"; do
 done
 
 install -m0644 "$key_file" "$output_root/RPM-GPG-KEY-OSMANTHUS"
-install -m0644 "$bootstrap_package" "$output_root/osmanthus-release-1-1.noarch.rpm"
 (
   cd "$output_root"
   {

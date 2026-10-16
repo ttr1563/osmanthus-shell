@@ -45,12 +45,18 @@ for required in \
   packaging/rpm/osmanthus-release.spec \
   packaging/rpm/osmanthus.repo \
   packaging/rpm/osmanthus.spec \
+  scripts/build-apt-repository.sh \
   scripts/build-deb.sh \
+  scripts/build-rpm-repository.sh \
   scripts/build-rpm.sh \
   scripts/package-source.sh \
+  scripts/package-version.sh \
   scripts/test-deb.sh \
   scripts/test-rpm.sh \
+  scripts/test-signed-repositories.sh \
   scripts/test-source-package.sh \
+  scripts/verify-apt-repository.sh \
+  scripts/verify-rpm-repository.sh \
   src/bin/osmanthus-shell.rs \
   src/bin/osmanthusd.rs \
   src/main.rs; do
