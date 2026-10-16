@@ -54,6 +54,27 @@ scripts/build-rpm-repository.sh "$rpm_root"
     find al2023 -type f -name 'osmanthus-*.rpm' -print | sort
   } | xargs sha256sum > "$temporary/rpm-package-checksums"
 )
+GNUPGHOME="$gpg_home" gpg --batch --pinentry-mode loopback --passphrase '' \
+  --quick-generate-key 'Osmanthus wrong repository test key' rsa2048 sign 1d
+wrong_fingerprint="$(GNUPGHOME="$gpg_home" gpg --batch --with-colons \
+  --list-secret-keys 'Osmanthus wrong repository test key' \
+  | awk -F: '$1 == "fpr" { print $10; exit }')"
+wrong_public_key="$temporary/RPM-GPG-KEY-WRONG"
+test -n "$wrong_fingerprint"
+GNUPGHOME="$gpg_home" gpg --batch --armor --export "$wrong_fingerprint" > "$wrong_public_key"
+if OSMANTHUS_GPG_KEY_ID="$wrong_fingerprint" \
+  OSMANTHUS_GPG_PUBLIC_KEY="$wrong_public_key" \
+  scripts/build-rpm-repository.sh "$rpm_root" \
+  >"$temporary/wrong-key-output" 2>&1; then
+  echo 'existing RPMs were accepted with a different signing key' >&2
+  exit 1
+fi
+grep -F 'existing RPM signature is not valid for the configured Osmanthus key' \
+  "$temporary/wrong-key-output" >/dev/null
+(
+  cd "$rpm_root"
+  sha256sum --check "$temporary/rpm-package-checksums"
+)
 scripts/build-rpm-repository.sh "$rpm_root"
 (
   cd "$rpm_root"
