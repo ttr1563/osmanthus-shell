@@ -3,7 +3,6 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
-
 output_root="${1:-docs/rpm}"
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
@@ -13,42 +12,62 @@ case "$output_root" in
     exit 1
     ;;
 esac
-key_file="${ONYX_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-ONYX}"
-signing_key="${ONYX_GPG_KEY_ID:-}"
-gpg_home="${ONYX_GPG_HOME:-}"
-passphrase_file="${ONYX_GPG_PASSPHRASE_FILE:-}"
 
-for command in createrepo_c gpg realpath rpm rpmbuild; do
+key_file="${OSMANTHUS_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-OSMANTHUS}"
+signing_key="${OSMANTHUS_GPG_KEY_ID:-}"
+gpg_home="${OSMANTHUS_GPG_HOME:-}"
+passphrase_file="${OSMANTHUS_GPG_PASSPHRASE_FILE:-}"
+for command in createrepo_c find gpg install realpath rpm rpmbuild sha256sum sort; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
   }
 done
 if [[ ! -s "$key_file" ]]; then
-  echo "public signing key not found: $key_file" >&2
+  echo "Osmanthus public signing key not found: $key_file" >&2
   exit 1
 fi
 if [[ -z "$signing_key" || -z "$gpg_home" ]]; then
-  echo "ONYX_GPG_KEY_ID and ONYX_GPG_HOME are required" >&2
+  echo "OSMANTHUS_GPG_KEY_ID and OSMANTHUS_GPG_HOME are required" >&2
   exit 1
 fi
 
-architecture="$(rpm --eval '%{_target_cpu}')"
-package_dir="$output_root/al2023/$architecture/Packages"
-if ! find "$package_dir" -maxdepth 1 -type f -name 'onyx-[0-9]*.rpm' -print -quit | grep -q .; then
-  echo "Onyx package not found under $package_dir" >&2
+mapfile -t package_directories < <(find "$output_root/al2023" -mindepth 2 -maxdepth 2 \
+  -type d -name Packages -print 2>/dev/null | sort)
+if [[ "${#package_directories[@]}" -eq 0 ]]; then
+  echo "Osmanthus RPM package directories not found under $output_root/al2023" >&2
   exit 1
 fi
+for package_directory in "${package_directories[@]}"; do
+  architecture="$(basename "$(dirname "$package_directory")")"
+  case "$architecture" in
+    x86_64 | aarch64) ;;
+    *) echo "unsupported RPM repository architecture: $architecture" >&2; exit 1 ;;
+  esac
+  if ! find "$package_directory" -maxdepth 1 -type f \
+    -name "osmanthus-*.${architecture}.rpm" -print -quit | grep -q .; then
+    echo "Osmanthus $architecture package not found under $package_directory" >&2
+    exit 1
+  fi
+  for package in "$package_directory"/osmanthus-*.rpm; do
+    if [[ "$(rpm --query --package "$package" --queryformat '%{NAME} %{ARCH}')" != "osmanthus $architecture" ]]; then
+      echo "unexpected RPM package identity: $package" >&2
+      exit 1
+    fi
+  done
+done
 
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 topdir="$temporary/rpmbuild"
 mkdir -p "$topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-install -m0644 packaging/rpm/onyx.repo "$topdir/SOURCES/onyx.repo"
-install -m0644 "$key_file" "$topdir/SOURCES/RPM-GPG-KEY-ONYX"
-install -m0644 packaging/rpm/onyx-release.spec "$topdir/SPECS/onyx-release.spec"
-rpmbuild --define "_topdir $topdir" -bb "$topdir/SPECS/onyx-release.spec"
-install -m0644 "$topdir"/RPMS/noarch/onyx-release-*.noarch.rpm "$package_dir/"
+install -m0644 packaging/rpm/osmanthus.repo "$topdir/SOURCES/osmanthus.repo"
+install -m0644 "$key_file" "$topdir/SOURCES/RPM-GPG-KEY-OSMANTHUS"
+install -m0644 packaging/rpm/osmanthus-release.spec "$topdir/SPECS/osmanthus-release.spec"
+rpmbuild --define "_topdir $topdir" -bb "$topdir/SPECS/osmanthus-release.spec"
+bootstrap_package="$(find "$topdir/RPMS/noarch" -maxdepth 1 -type f \
+  -name 'osmanthus-release-*.noarch.rpm' -print -quit)"
+test -n "$bootstrap_package"
 
 signing_arguments=(
   --define "_gpg_name $signing_key"
@@ -70,33 +89,38 @@ if [[ -n "$passphrase_file" ]]; then
   gpg_arguments+=(--pinentry-mode loopback --passphrase-file "$passphrase_file")
 fi
 
-for package in "$package_dir"/*.rpm; do
-  GNUPGHOME="$gpg_home" rpmsign "${signing_arguments[@]}" --addsign "$package"
-  rpm --dbpath "$verification_db" --checksig "$package"
+for package_directory in "${package_directories[@]}"; do
+  for package in "$package_directory"/osmanthus-*.rpm; do
+    GNUPGHOME="$gpg_home" rpmsign "${signing_arguments[@]}" --addsign "$package"
+    rpm --dbpath "$verification_db" --checksig "$package"
+  done
+done
+GNUPGHOME="$gpg_home" rpmsign "${signing_arguments[@]}" --addsign "$bootstrap_package"
+rpm --dbpath "$verification_db" --checksig "$bootstrap_package"
+
+for package_directory in "${package_directories[@]}"; do
+  architecture="$(basename "$(dirname "$package_directory")")"
+  metadata_root="$temporary/repository-$architecture"
+  mkdir -p "$metadata_root/Packages"
+  cp -p "$package_directory"/osmanthus-*.rpm "$metadata_root/Packages/"
+  createrepo_c --checksum sha256 --workers 1 "$metadata_root"
+  GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
+    --armor --detach-sign "$metadata_root/repodata/repomd.xml"
+  rm -rf "$output_root/al2023/$architecture/repodata"
+  cp -a "$metadata_root/repodata" "$output_root/al2023/$architecture/repodata"
 done
 
-metadata_root="$temporary/repository"
-mkdir -p "$metadata_root/Packages"
-cp -p "$package_dir"/*.rpm "$metadata_root/Packages/"
-createrepo_c --checksum sha256 --workers 1 "$metadata_root"
-GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
-  --armor --detach-sign "$metadata_root/repodata/repomd.xml"
-
-rm -rf "$output_root/al2023/$architecture/repodata"
-cp -a "$metadata_root/repodata" "$output_root/al2023/$architecture/repodata"
-install -m0644 "$key_file" "$output_root/RPM-GPG-KEY-ONYX"
-install -m0644 "$package_dir"/onyx-release-*.noarch.rpm \
-  "$output_root/onyx-release-1-1.noarch.rpm"
-
+install -m0644 "$key_file" "$output_root/RPM-GPG-KEY-OSMANTHUS"
+install -m0644 "$bootstrap_package" "$output_root/osmanthus-release-1-1.noarch.rpm"
 (
   cd "$output_root"
-  sha256sum \
-    RPM-GPG-KEY-ONYX \
-    onyx-release-1-1.noarch.rpm \
-    "al2023/$architecture/Packages/"*.rpm \
-    "al2023/$architecture/repodata/repomd.xml" > SHA256SUMS
+  {
+    printf '%s\n' RPM-GPG-KEY-OSMANTHUS osmanthus-release-1-1.noarch.rpm
+    find al2023 -type f \( -name '*.rpm' -o -name 'repomd.xml' \) -print | sort
+  } | xargs sha256sum > SHA256SUMS
 )
 GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
   --armor --detach-sign "$output_root/SHA256SUMS"
 
-sha256sum "$package_dir"/*.rpm "$output_root/onyx-release-1-1.noarch.rpm"
+mapfile -t signed_packages < <(find "$output_root/al2023" -type f -name 'osmanthus-*.rpm' -print | sort)
+sha256sum "$output_root/osmanthus-release-1-1.noarch.rpm" "${signed_packages[@]}"

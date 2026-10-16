@@ -5,8 +5,8 @@ repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
 
 repository_path="${1:-docs/rpm/al2023/$(rpm --eval '%{_target_cpu}')}"
-key_file="${2:-docs/rpm/RPM-GPG-KEY-ONYX}"
-for command in dnf gpg rpm; do
+key_file="${2:-docs/rpm/RPM-GPG-KEY-OSMANTHUS}"
+for command in dnf gpg realpath rpm sha256sum; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -17,6 +17,12 @@ test -s "$repository_path/repodata/repomd.xml"
 test -s "$repository_path/repodata/repomd.xml.asc"
 test -s "$key_file"
 repository_root_path="$(dirname "$(dirname "$repository_path")")"
+repository_architecture="$(basename "$repository_path")"
+case "$repository_architecture" in
+  x86_64 | aarch64) ;;
+  *) echo "unsupported RPM repository architecture: $repository_architecture" >&2; exit 1 ;;
+esac
+test -s "$repository_root_path/osmanthus-release-1-1.noarch.rpm"
 test -s "$repository_root_path/SHA256SUMS"
 test -s "$repository_root_path/SHA256SUMS.asc"
 
@@ -41,22 +47,28 @@ dnf \
   --installroot "$temporary/dnf-root" \
   --releasever 2023 \
   --disablerepo='*' \
-  --repofrompath "onyx,file://$absolute_repository" \
-  --enablerepo onyx \
-  --setopt="onyx.gpgkey=file://$absolute_key" \
-  --setopt=onyx.gpgcheck=1 \
-  --setopt=onyx.repo_gpgcheck=1 \
+  --repofrompath "osmanthus,file://$absolute_repository" \
+  --enablerepo osmanthus \
+  --setopt="osmanthus.gpgkey=file://$absolute_key" \
+  --setopt=osmanthus.gpgcheck=1 \
+  --setopt=osmanthus.repo_gpgcheck=1 \
   --setopt="cachedir=$temporary/dnf-cache" \
-  --setopt=persistdir="$temporary/dnf-persist" \
+  --setopt="persistdir=$temporary/dnf-persist" \
   --refresh -y makecache
 
 verification_db="$temporary/rpmdb"
 mkdir -p "$verification_db"
 rpm --dbpath "$verification_db" --initdb
 rpm --dbpath "$verification_db" --import "$key_file"
-
-for package in "$repository_path"/Packages/*.rpm; do
+for package in "$repository_path"/Packages/osmanthus-*.rpm \
+  "$repository_root_path/osmanthus-release-1-1.noarch.rpm"; do
   rpm --dbpath "$verification_db" --checksig "$package"
-  rpm --dbpath "$verification_db" --query --package "$package" --queryformat '%{NAME} %{VERSION}-%{RELEASE} %{ARCH}\n'
+  rpm --dbpath "$verification_db" --query --package "$package" \
+    --queryformat '%{NAME} %{VERSION}-%{RELEASE} %{ARCH}\n'
   rpm --dbpath "$verification_db" --query --package "$package" --list >/dev/null
+done
+for package in "$repository_path"/Packages/osmanthus-*.rpm; do
+  test "$(rpm --dbpath "$verification_db" --query --package "$package" \
+    --queryformat '%{NAME} %{ARCH}')" = \
+    "osmanthus $repository_architecture"
 done

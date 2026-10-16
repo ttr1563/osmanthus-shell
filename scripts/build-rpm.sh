@@ -6,6 +6,11 @@ version="${1:?usage: scripts/build-rpm.sh VERSION [OUTPUT_ROOT]}"
 output_root="${2:-dist/rpm/al2023}"
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/package-version.sh
+target_dir="${CARGO_TARGET_DIR:-$repository_root/target}"
+if [[ "$target_dir" != /* ]]; then
+  target_dir="$repository_root/$target_dir"
+fi
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
   "$repository_root/docs/rpm/al2023" | "$repository_root/dist"/*) ;;
@@ -20,12 +25,7 @@ if [[ "$version" != "$manifest_version" ]]; then
   echo "version $version does not match Cargo.toml $manifest_version" >&2
   exit 1
 fi
-if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  :
-else
-  echo "version must use MAJOR.MINOR.PATCH format" >&2
-  exit 1
-fi
+parse_osmanthus_package_version "$version"
 for command in cargo realpath rpmbuild rpm; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
@@ -48,9 +48,9 @@ topdir="$temporary/rpmbuild"
 mkdir -p "$topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 
 cargo build --release --locked
-install -m0755 target/release/osmanthus "$topdir/SOURCES/osmanthus"
-install -m0755 target/release/osmanthusd "$topdir/SOURCES/osmanthusd"
-install -m0755 target/release/osmanthus-shell "$topdir/SOURCES/osmanthus-shell"
+install -m0755 "$target_dir/release/osmanthus" "$topdir/SOURCES/osmanthus"
+install -m0755 "$target_dir/release/osmanthusd" "$topdir/SOURCES/osmanthusd"
+install -m0755 "$target_dir/release/osmanthus-shell" "$topdir/SOURCES/osmanthus-shell"
 install -m0644 LICENSE "$topdir/SOURCES/LICENSE"
 install -m0644 README.md "$topdir/SOURCES/README.md"
 install -m0644 docs/operations.md "$topdir/SOURCES/operations.md"
@@ -63,7 +63,8 @@ install -m0644 packaging/rpm/osmanthus.spec "$topdir/SPECS/osmanthus.spec"
 SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
   rpmbuild \
     --define "_topdir $topdir" \
-    --define "osmanthus_version $version" \
+    --define "osmanthus_version $OSMANTHUS_RPM_VERSION" \
+    --define "osmanthus_release $OSMANTHUS_RPM_RELEASE" \
     --define "_build_id_links none" \
     -bb "$topdir/SPECS/osmanthus.spec"
 
@@ -72,7 +73,7 @@ mkdir -p "$package_dir"
 find "$topdir/RPMS/$architecture" -maxdepth 1 -type f -name 'osmanthus-*.rpm' \
   -exec install -m0644 {} "$package_dir/" \;
 
-package="$(find "$package_dir" -maxdepth 1 -type f -name "osmanthus-${version}-*.${architecture}.rpm" -print -quit)"
+package="$(find "$package_dir" -maxdepth 1 -type f -name "osmanthus-${OSMANTHUS_RPM_VERSION}-${OSMANTHUS_RPM_RELEASE}*.${architecture}.rpm" -print -quit)"
 if [[ -z "$package" ]]; then
   echo "RPM output was not created" >&2
   exit 1

@@ -4,16 +4,14 @@ set -euo pipefail
 version="${1:?usage: scripts/package-source.sh VERSION [OUTPUT]}"
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/package-version.sh
 
 manifest_version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
 if [[ "$version" != "$manifest_version" ]]; then
   echo "version $version does not match Cargo.toml $manifest_version" >&2
   exit 1
 fi
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "version must use MAJOR.MINOR.PATCH format" >&2
-  exit 1
-fi
+parse_osmanthus_package_version "$version"
 
 output="${2:-dist/osmanthus-${version}.tar.gz}"
 mkdir -p "$(dirname "$output")"

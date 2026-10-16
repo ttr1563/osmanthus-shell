@@ -104,6 +104,10 @@ decommission, and uninstall have been verified on Ubuntu 24.04 with kernel 6.8.
 Each other advertised distribution and architecture still requires its own
 installed-package integration result.
 The legacy Homebrew formula installs Onyx v0.1.3, not Osmanthus.
+Release engineering for the future signed repositories is documented in the
+[Osmanthus APT runbook](docs/osmanthus-apt-repository.md) and
+[Osmanthus RPM runbook](docs/osmanthus-rpm-repository.md). Release candidates
+do not enter the stable package channels.
 
 ### Migrating from Onyx
 

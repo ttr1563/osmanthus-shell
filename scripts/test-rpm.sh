@@ -3,8 +3,10 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/package-version.sh
 
 version="${1:?usage: scripts/test-rpm.sh VERSION [PACKAGE_ROOT]}"
+parse_osmanthus_package_version "$version"
 repository_path="${2:-dist/rpm/$(rpm --eval '%{_target_cpu}')}"
 repository_path="$(realpath -m "$repository_path")"
 case "$repository_path" in
@@ -14,7 +16,7 @@ case "$repository_path" in
     exit 1
     ;;
 esac
-package="$(find "$repository_path/Packages" -maxdepth 1 -type f -name "osmanthus-${version}-*.rpm" -print -quit)"
+package="$(find "$repository_path/Packages" -maxdepth 1 -type f -name "osmanthus-${OSMANTHUS_RPM_VERSION}-${OSMANTHUS_RPM_RELEASE}*.rpm" -print -quit)"
 
 if [[ -z "$package" ]]; then
   echo "Osmanthus RPM is missing" >&2

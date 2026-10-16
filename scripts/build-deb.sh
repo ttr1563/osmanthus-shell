@@ -6,6 +6,11 @@ version="${1:?usage: scripts/build-deb.sh VERSION [OUTPUT_ROOT]}"
 output_root="${2:-dist/deb}"
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/package-version.sh
+target_dir="${CARGO_TARGET_DIR:-$repository_root/target}"
+if [[ "$target_dir" != /* ]]; then
+  target_dir="$repository_root/$target_dir"
+fi
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
   "$repository_root/docs/apt/pool/main/o/osmanthus" | "$repository_root/dist"/*) ;;
@@ -20,10 +25,7 @@ if [[ "$version" != "$manifest_version" ]]; then
   echo "version $version does not match Cargo.toml $manifest_version" >&2
   exit 1
 fi
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "version must use MAJOR.MINOR.PATCH format" >&2
-  exit 1
-fi
+parse_osmanthus_package_version "$version"
 for command in ar awk cargo du find gzip install md5sum realpath sort tar uname xargs; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
@@ -54,9 +56,9 @@ mkdir -p \
   "$package_root/lib/systemd/system"
 
 cargo build --release --locked
-install -m0755 target/release/osmanthus "$package_root/usr/bin/osmanthus"
-install -m0755 target/release/osmanthusd "$package_root/usr/bin/osmanthusd"
-install -m0755 target/release/osmanthus-shell "$package_root/usr/bin/osmanthus-shell"
+install -m0755 "$target_dir/release/osmanthus" "$package_root/usr/bin/osmanthus"
+install -m0755 "$target_dir/release/osmanthusd" "$package_root/usr/bin/osmanthusd"
+install -m0755 "$target_dir/release/osmanthus-shell" "$package_root/usr/bin/osmanthus-shell"
 install -m0644 ops/logrotate/osmanthus "$package_root/etc/logrotate.d/osmanthus"
 install -m0644 ops/systemd/osmanthusd.service "$package_root/lib/systemd/system/osmanthusd.service"
 install -m0644 LICENSE "$package_root/usr/share/doc/osmanthus/copyright"
@@ -72,7 +74,7 @@ install -m0644 ops/ssm/osmanthus-session.json \
 installed_size="$(du -sk --apparent-size "$package_root" | awk '{ print $1 }')"
 cat > "$temporary/control" <<EOF
 Package: osmanthus
-Version: ${version}-1
+Version: ${OSMANTHUS_DEB_VERSION}
 Architecture: $deb_architecture
 Maintainer: Osmanthus maintainers <ttr1563@users.noreply.github.com>
 Installed-Size: ${installed_size}
@@ -158,7 +160,7 @@ tar \
   -czf "$temporary/data.tar.gz" .
 
 mkdir -p "$output_root"
-package="$output_root/osmanthus_${version}-1_${deb_architecture}.deb"
+package="$output_root/osmanthus_${OSMANTHUS_DEB_VERSION}_${deb_architecture}.deb"
 rm -f "$package"
 (
   cd "$temporary"

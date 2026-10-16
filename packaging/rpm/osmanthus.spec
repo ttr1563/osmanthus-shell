@@ -1,6 +1,6 @@
 Name:           osmanthus
 Version:        %{osmanthus_version}
-Release:        1%{?dist}
+Release:        %{osmanthus_release}%{?dist}
 Summary:        Lightweight command guard for Linux servers
 License:        MIT
 URL:            https://github.com/ttr1563/osmanthus-shell
@@ -84,5 +84,5 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/osmanthus
 
 %changelog
-* Thu Oct 08 2026 Osmanthus maintainers <ttr1563@users.noreply.github.com> - %{osmanthus_version}-1
+* Fri Oct 16 2026 Osmanthus maintainers <ttr1563@users.noreply.github.com> - %{osmanthus_version}-%{osmanthus_release}
 - Package the Osmanthus CLI for Amazon Linux 2023.

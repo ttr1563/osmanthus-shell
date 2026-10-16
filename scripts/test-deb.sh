@@ -3,7 +3,9 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/package-version.sh
 version="${1:?usage: scripts/test-deb.sh VERSION [PACKAGE_ROOT]}"
+parse_osmanthus_package_version "$version"
 repository_path="${2:-dist/deb}"
 repository_path="$(realpath -m "$repository_path")"
 case "$repository_path" in
@@ -34,7 +36,7 @@ case "$(uname -m)" in
     ;;
 esac
 
-package="$repository_path/osmanthus_${version}-1_${deb_architecture}.deb"
+package="$repository_path/osmanthus_${OSMANTHUS_DEB_VERSION}_${deb_architecture}.deb"
 test -s "$package"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
@@ -46,7 +48,7 @@ test "$(<"$temporary/debian-binary")" = "2.0"
 tar -xzf "$temporary/control.tar.gz" -C "$temporary"
 tar -xzf "$temporary/data.tar.gz" -C "$temporary"
 grep -Fx "Package: osmanthus" "$temporary/control"
-grep -Fx "Version: ${version}-1" "$temporary/control"
+grep -Fx "Version: ${OSMANTHUS_DEB_VERSION}" "$temporary/control"
 grep -Fx "Architecture: $deb_architecture" "$temporary/control"
 grep -Fx "Conflicts: onyx" "$temporary/control"
 grep -Fq "/sys/fs/bpf/osmanthus" "$temporary/prerm"

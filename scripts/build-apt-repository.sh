@@ -13,42 +13,38 @@ case "$output_root" in
     ;;
 esac
 
-key_file="${ONYX_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-ONYX}"
-signing_key="${ONYX_GPG_KEY_ID:-}"
-gpg_home="${ONYX_GPG_HOME:-}"
-passphrase_file="${ONYX_GPG_PASSPHRASE_FILE:-}"
-for command in ar awk cp date find gzip gpg install md5sum realpath sha256sum sort stat tar xargs; do
+key_file="${OSMANTHUS_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-OSMANTHUS}"
+signing_key="${OSMANTHUS_GPG_KEY_ID:-}"
+gpg_home="${OSMANTHUS_GPG_HOME:-}"
+passphrase_file="${OSMANTHUS_GPG_PASSPHRASE_FILE:-}"
+for command in ar awk cp date find gpg gzip install md5sum realpath sha256sum sort stat tar xargs; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
   }
 done
 if [[ ! -s "$key_file" ]]; then
-  echo "public signing key not found: $key_file" >&2
+  echo "Osmanthus public signing key not found: $key_file" >&2
   exit 1
 fi
 if [[ -z "$signing_key" || -z "$gpg_home" ]]; then
-  echo "ONYX_GPG_KEY_ID and ONYX_GPG_HOME are required" >&2
+  echo "OSMANTHUS_GPG_KEY_ID and OSMANTHUS_GPG_HOME are required" >&2
   exit 1
 fi
 
-pool="$output_root/pool/main/o/onyx"
-mapfile -t packages < <(find "$pool" -maxdepth 1 -type f -name 'onyx_[0-9]*_amd64.deb' -print | sort -V)
+pool="$output_root/pool/main/o/osmanthus"
+mapfile -t packages < <(find "$pool" -maxdepth 1 -type f -name 'osmanthus_*.deb' -print | sort -V)
 if [[ "${#packages[@]}" -eq 0 ]]; then
-  echo "Onyx Debian package not found under $pool" >&2
+  echo "Osmanthus Debian package not found under $pool" >&2
   exit 1
 fi
-latest_package="${packages[${#packages[@]} - 1]}"
 
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 metadata_root="$temporary/apt"
-binary_dir="$metadata_root/dists/stable/main/binary-amd64"
-mkdir -p "$binary_dir"
-: > "$binary_dir/Packages"
+declare -A architecture_seen=()
 for index in "${!packages[@]}"; do
   package="${packages[$index]}"
-  relative_package="${package#"$output_root"/}"
   control_dir="$temporary/control-$index"
   mkdir -p "$control_dir"
   (
@@ -56,37 +52,68 @@ for index in "${!packages[@]}"; do
     ar x "$package" control.tar.gz
     tar -xzf control.tar.gz control
   )
-  if [[ "$index" -gt 0 ]]; then
-    printf '\n' >> "$binary_dir/Packages"
+  if ! grep -Fqx 'Package: osmanthus' "$control_dir/control"; then
+    echo "unexpected Debian package identity: $package" >&2
+    exit 1
   fi
-  cat "$control_dir/control" >> "$binary_dir/Packages"
-  cat >> "$binary_dir/Packages" <<EOF
+  package_version="$(awk '/^Version: / { print $2; exit }' "$control_dir/control")"
+  architecture="$(awk '/^Architecture: / { print $2; exit }' "$control_dir/control")"
+  case "$architecture" in
+    amd64 | arm64) ;;
+    *)
+      echo "unsupported Debian repository architecture in $package: $architecture" >&2
+      exit 1
+      ;;
+  esac
+  expected_package="$pool/osmanthus_${package_version}_${architecture}.deb"
+  if [[ "$package" != "$expected_package" ]]; then
+    echo "Debian package filename does not match its control metadata: $package" >&2
+    exit 1
+  fi
+  architecture_seen["$architecture"]=1
+  binary_dir="$metadata_root/dists/stable/main/binary-$architecture"
+  mkdir -p "$binary_dir"
+  packages_file="$binary_dir/Packages"
+  if [[ -s "$packages_file" ]]; then
+    printf '\n' >> "$packages_file"
+  fi
+  relative_package="${package#"$output_root"/}"
+  cat "$control_dir/control" >> "$packages_file"
+  cat >> "$packages_file" <<EOF
 Filename: ${relative_package}
 Size: $(stat -c %s "$package")
 MD5sum: $(md5sum "$package" | awk '{ print $1 }')
 SHA256: $(sha256sum "$package" | awk '{ print $1 }')
 EOF
 done
-gzip -9 -n -c "$binary_dir/Packages" > "$binary_dir/Packages.gz"
+
+mapfile -t architectures < <(printf '%s\n' "${!architecture_seen[@]}" | sort)
+for architecture in "${architectures[@]}"; do
+  binary_dir="$metadata_root/dists/stable/main/binary-$architecture"
+  gzip -9 -n -c "$binary_dir/Packages" > "$binary_dir/Packages.gz"
+done
 
 release="$metadata_root/dists/stable/Release"
 release_epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
 {
-  echo "Origin: Onyx"
-  echo "Label: Onyx"
+  echo "Origin: Osmanthus"
+  echo "Label: Osmanthus"
   echo "Suite: stable"
   echo "Codename: stable"
   echo "Version: 1"
-  echo "Architectures: amd64"
+  echo "Architectures: ${architectures[*]}"
   echo "Components: main"
-  echo "Description: Onyx packages for Debian and Ubuntu"
+  echo "Description: Osmanthus packages for Debian and Ubuntu"
   echo "Date: $(date --utc --date="@${release_epoch}" --rfc-email)"
   echo "SHA256:"
-  for file in main/binary-amd64/Packages main/binary-amd64/Packages.gz; do
-    printf ' %s %16s %s\n' \
-      "$(sha256sum "$metadata_root/dists/stable/$file" | awk '{ print $1 }')" \
-      "$(stat -c %s "$metadata_root/dists/stable/$file")" \
-      "$file"
+  for architecture in "${architectures[@]}"; do
+    for name in Packages Packages.gz; do
+      file="main/binary-$architecture/$name"
+      printf ' %s %16s %s\n' \
+        "$(sha256sum "$metadata_root/dists/stable/$file" | awk '{ print $1 }')" \
+        "$(stat -c %s "$metadata_root/dists/stable/$file")" \
+        "$file"
+    done
   done
 } > "$release"
 
@@ -105,14 +132,17 @@ GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
 
 rm -rf "$output_root/dists"
 cp -a "$metadata_root/dists" "$output_root/dists"
-install -m0644 "$key_file" "$output_root/onyx.asc"
-install -m0644 packaging/deb/onyx.sources "$output_root/onyx.sources"
+install -m0644 "$key_file" "$output_root/osmanthus.asc"
+install -m0644 packaging/deb/osmanthus.sources "$output_root/osmanthus.sources"
 
 (
   cd "$output_root"
-  find dists pool -type f -print | sort | xargs sha256sum > SHA256SUMS
+  {
+    printf '%s\n' osmanthus.asc osmanthus.sources
+    find dists pool -type f -print | sort
+  } | xargs sha256sum > SHA256SUMS
 )
 GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
   --armor --detach-sign --output "$output_root/SHA256SUMS.asc" "$output_root/SHA256SUMS"
 
-sha256sum "$latest_package" "$output_root/dists/stable/InRelease"
+sha256sum "${packages[@]}" "$output_root/dists/stable/InRelease"
