@@ -20,7 +20,9 @@ case "$output_root" in
     ;;
 esac
 
-manifest_version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
+require_clean_osmanthus_worktree
+build_commit="$(git rev-parse --verify HEAD)"
+manifest_version="$(git show "$build_commit:Cargo.toml" | awk -F '"' '/^version = "/ { print $2; exit }')"
 if [[ "$version" != "$manifest_version" ]]; then
   echo "version $version does not match Cargo.toml $manifest_version" >&2
   exit 1
@@ -70,6 +72,8 @@ SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
 
 package_dir="$output_root/$architecture/Packages"
 mkdir -p "$package_dir"
+test "$(git rev-parse --verify HEAD)" = "$build_commit"
+require_clean_osmanthus_worktree
 find "$topdir/RPMS/$architecture" -maxdepth 1 -type f -name 'osmanthus-*.rpm' \
   -exec install -m0644 {} "$package_dir/" \;
 

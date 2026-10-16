@@ -25,3 +25,17 @@ parse_osmanthus_package_version() {
   echo "version must use MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.NUMBER format" >&2
   return 1
 }
+
+require_clean_osmanthus_worktree() {
+  local status
+
+  if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+    echo "release package build requires a committed Git HEAD" >&2
+    return 1
+  fi
+  status="$(git status --porcelain=v1 --untracked-files=all)"
+  if [[ -n "$status" ]]; then
+    echo "release package build requires a clean worktree" >&2
+    return 1
+  fi
+}

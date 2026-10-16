@@ -20,7 +20,9 @@ case "$output_root" in
     ;;
 esac
 
-manifest_version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
+require_clean_osmanthus_worktree
+build_commit="$(git rev-parse --verify HEAD)"
+manifest_version="$(git show "$build_commit:Cargo.toml" | awk -F '"' '/^version = "/ { print $2; exit }')"
 if [[ "$version" != "$manifest_version" ]]; then
   echo "version $version does not match Cargo.toml $manifest_version" >&2
   exit 1
@@ -161,11 +163,14 @@ tar \
 
 mkdir -p "$output_root"
 package="$output_root/osmanthus_${OSMANTHUS_DEB_VERSION}_${deb_architecture}.deb"
-rm -f "$package"
+temporary_package="$temporary/$(basename "$package")"
 (
   cd "$temporary"
-  ar rcsD "$package" debian-binary control.tar.gz data.tar.gz
+  ar rcsD "$temporary_package" debian-binary control.tar.gz data.tar.gz
 )
+test "$(git rev-parse --verify HEAD)" = "$build_commit"
+require_clean_osmanthus_worktree
+install -m0644 "$temporary_package" "$package"
 
 ar t "$package"
 sha256sum "$package"
