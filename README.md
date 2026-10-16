@@ -308,6 +308,26 @@ sudo ./target/debug/examples/bpf-smoke
 The BPF smoke test uses a temporary directory under `/var/tmp`; do not run it on a
 host whose kernel capabilities and workload impact have not been reviewed.
 
+For installed-package acceptance, first register a dedicated disposable root with
+only the `truncate` action, then exercise the daemon-loaded policy rather than the
+transient smoke backend:
+
+```bash
+sudo install -d -m 0755 /var/tmp/osmanthus-truncate-acceptance
+sudo osmanthus policy protect add \
+  --path /var/tmp/osmanthus-truncate-acceptance --action truncate
+scripts/test-installed-truncate.sh \
+  --root /var/tmp/osmanthus-truncate-acceptance \
+  --acknowledge-disposable-root
+```
+
+The script requires the root to be an existing canonical directory and refuses
+`/`. It creates and removes only a uniquely named child, verifies that
+`truncate(2)`, descriptor-based `ftruncate(2)`, and `O_TRUNC` preserve the target,
+and verifies that a non-truncating write remains available under a truncate-only
+policy. Run it only in a disposable VM or a reviewed test root; policy removal and
+authenticated daemon decommission remain explicit operator steps.
+
 ## License
 
 [MIT](LICENSE)

@@ -53,6 +53,7 @@ for required in \
   scripts/package-version.sh \
   scripts/test-deb.sh \
   scripts/test-rpm.sh \
+  scripts/test-installed-truncate.sh \
   scripts/test-signed-repositories.sh \
   scripts/test-source-package.sh \
   scripts/verify-apt-repository.sh \
