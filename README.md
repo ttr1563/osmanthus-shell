@@ -256,10 +256,28 @@ network controls are designed but not yet advertised as enforced features. See
 This branch is not ready for a production release until all of the following
 are completed and tested from packages:
 
-- packaged upgrade/rollback and AWS SSM entry-point tests;
+- clean-host Debian/Ubuntu amd64 install, upgrade, rollback, and uninstall;
+- current-ABI Ubuntu 24.04 arm64 enforcement and lifecycle revalidation;
+- an AWS SSM custom-document entry-point test;
 - a documented break-glass restore test for a lost policy-administrator authenticator;
-- packaged verification of opt-in non-truncating writes and long maintenance;
-- signed RPM and deb repository metadata with install and rollback verification.
+- packaged verification of opt-in non-truncating writes and long maintenance on
+  every advertised architecture;
+- install and rollback from public, dedicated Osmanthus RPM and deb signing
+  identities and repository metadata.
+
+Amazon Linux 2023 x86-64 package install, kernel enforcement, scoped
+maintenance, audit failure behavior, monitored PTY sessions, same-ABI upgrade
+and rollback, authenticated decommission, and uninstall have passed on kernel
+6.1. Local repository generation and signature verification have also passed
+with an ephemeral test identity; that does not prove the future public signing
+identity or clean-host repository bootstrap. Ubuntu 24.04 arm64 passed the prior
+ABI lifecycle, but the current ABI 5 descriptor-truncate fix still requires its
+native kernel 6.8 revalidation. These results must not be generalized to an
+untested distribution, architecture, entry point, or signing identity.
+
+The first candidate is planned as `v0.2.0-rc.1`. It is distributed as immutable
+signed release artifacts and does not enter the stable APT/DNF channels. Stable
+repository publication follows candidate acceptance and its observation period.
 
 These gates apply to the Linux release. A native Windows Server service/backend
 and Windows Server tests are a separate platform track; Windows support is not
