@@ -195,9 +195,12 @@ Do not directly edit `policy.json`, its digest, or pinned maps.
 
 ## Logs
 
-`/var/log/osmanthus/audit.jsonl` is root-only JSONL. The packaged logrotate rule
-rotates it locally. Configure any S3, CloudWatch, SIEM, or backup shipping in a
-separate root-controlled service and alert on write/forwarding failures.
+`/var/log/osmanthus/audit.jsonl` is the root-only daemon record for kernel,
+process, lease, and session events. `/etc/osmanthus/admin/audit.jsonl` separately
+records authenticated policy and authenticator administration. The packaged
+logrotate rule rotates both locally as root:root mode 0600. Configure any S3,
+CloudWatch, SIEM, or backup shipping in a separate root-controlled service and
+alert on write/forwarding failures.
 
 PTY records contain base64-encoded raw terminal input and output. They can
 therefore contain passwords, tokens, or application output typed or printed in

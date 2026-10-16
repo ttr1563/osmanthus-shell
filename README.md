@@ -240,8 +240,10 @@ never enabled by a maintenance lease.
 
 ## Local evidence
 
-The enforced daemon writes one JSON object per line to
-`/var/log/osmanthus/audit.jsonl`. The default logrotate policy keeps rotation local.
+The enforced daemon writes kernel, process, lease, and session records as JSONL
+to `/var/log/osmanthus/audit.jsonl`. Authenticated policy and authenticator
+administration is recorded separately in `/etc/osmanthus/admin/audit.jsonl`.
+The default logrotate policy rotates both root-only records locally.
 Shipping to S3, CloudWatch, a SIEM, or another service is intentionally external
 to Osmanthus.
 

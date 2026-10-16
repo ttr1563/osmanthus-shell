@@ -41,6 +41,10 @@ grep -Fqx "ReadWritePaths=/run/osmanthus /var/log/osmanthus /sys/fs/bpf /etc/osm
 ! grep -Eq '^ReadWritePaths=(/etc/osmanthus([[:space:]]|$)|.*[[:space:]]/etc/osmanthus([[:space:]]|$))' \
   "$install_root/usr/lib/systemd/system/osmanthusd.service"
 test -s "$install_root/etc/logrotate.d/osmanthus"
+grep -Fqx "/var/lib/osmanthus/audit.jsonl {" "$install_root/etc/logrotate.d/osmanthus"
+grep -Fqx "/var/log/osmanthus/audit.jsonl {" "$install_root/etc/logrotate.d/osmanthus"
+grep -Fqx "/etc/osmanthus/admin/audit.jsonl {" "$install_root/etc/logrotate.d/osmanthus"
+test "$(grep -Fc "    create 0600 root root" "$install_root/etc/logrotate.d/osmanthus")" -eq 3
 test -s "$install_root/usr/share/doc/osmanthus/ssm.md"
 grep -Fq "caller cgroup" "$install_root/usr/share/doc/osmanthus/README.md"
 grep -Fq "dedicated transient systemd service" "$install_root/usr/share/doc/osmanthus/operations.md"
