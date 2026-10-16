@@ -91,12 +91,16 @@ scripts/build-rpm.sh 0.1.3 dist/rpm
 scripts/build-deb.sh 0.1.3 dist/deb
 scripts/test-rpm.sh 0.1.3 dist/rpm/x86_64
 scripts/test-deb.sh 0.1.3 dist/deb
+scripts/package-source.sh 0.1.3 dist/osmanthus-0.1.3.tar.gz
+scripts/test-source-package.sh 0.1.3
 ```
 
 The local tests inspect the package payload and CLI without requiring a public
 repository. They do not replace a clean-host install, daemon, login-shell,
 upgrade, or uninstall test. The public DNF/APT repositories are not updated by
-these commands.
+these commands. The source archive is generated from committed `HEAD`, not the
+working tree, and its test requires two byte-identical builds while excluding
+historical package repositories, build output, and the legacy Homebrew formula.
 The deb builder maps native Linux `x86_64` to Debian `amd64` and `aarch64` to
 `arm64`; it deliberately rejects cross-packaging and unsupported hosts. Native
 ARM64 build, package install, kernel enforcement, scoped maintenance, audit,
