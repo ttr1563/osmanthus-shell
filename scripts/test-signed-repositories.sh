@@ -14,7 +14,7 @@ case "$rpm_root" in
   *) echo "RPM test root must be below dist" >&2; exit 1 ;;
 esac
 
-for command in awk find gpg grep mkdir realpath rpm; do
+for command in awk find gpg gpgconf grep mkdir realpath rpm; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -25,9 +25,13 @@ find "$apt_root/pool/main/o/osmanthus" -maxdepth 1 -type f \
 find "$rpm_root/al2023" -type f -name 'osmanthus-*.rpm' -print -quit | grep -q .
 
 temporary="$(mktemp -d)"
-trap 'rm -rf "$temporary"' EXIT
 gpg_home="$temporary/gnupg"
 public_key="$temporary/RPM-GPG-KEY-OSMANTHUS"
+cleanup() {
+  GNUPGHOME="$gpg_home" gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+  rm -rf "$temporary"
+}
+trap cleanup EXIT
 mkdir -m0700 "$gpg_home"
 GNUPGHOME="$gpg_home" gpg --batch --pinentry-mode loopback --passphrase '' \
   --quick-generate-key 'Osmanthus ephemeral repository test' rsa2048 sign 1d
