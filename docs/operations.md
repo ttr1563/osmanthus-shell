@@ -179,10 +179,17 @@ restore the prior map contents. After any reported rollback error, stop changes
 and compare:
 
 ```bash
-sudo sha256sum -c /etc/osmanthus/policy.sha256
+sudo sh -c 'printf "%s  %s\n" \
+  "$(cat /etc/osmanthus/policy.sha256)" \
+  /etc/osmanthus/policy.json | sha256sum -c -'
 osmanthus daemon status
 sudo osmanthus policy list
 ```
+
+`policy.sha256` contains the raw hexadecimal digest, not a `sha256sum` manifest;
+the command above supplies the filename explicitly. `policy list` independently
+loads the same pair, validates ownership, modes, digest, schema, and policy
+values, and fails instead of displaying an inconsistent policy.
 
 Do not directly edit `policy.json`, its digest, or pinned maps.
 
