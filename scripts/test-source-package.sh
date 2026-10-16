@@ -38,9 +38,21 @@ for required in \
   docs/operations.md \
   docs/ssm.md \
   docs/windows-server.md \
+  ops/logrotate/osmanthus \
+  ops/ssm/osmanthus-session.json \
   ops/systemd/osmanthusd.service \
+  packaging/deb/osmanthus.sources \
+  packaging/rpm/osmanthus-release.spec \
+  packaging/rpm/osmanthus.repo \
+  packaging/rpm/osmanthus.spec \
+  scripts/build-deb.sh \
+  scripts/build-rpm.sh \
   scripts/package-source.sh \
+  scripts/test-deb.sh \
+  scripts/test-rpm.sh \
   scripts/test-source-package.sh \
+  src/bin/osmanthus-shell.rs \
+  src/bin/osmanthusd.rs \
   src/main.rs; do
   grep -Fx "$prefix/$required" "$listing" >/dev/null
 done
