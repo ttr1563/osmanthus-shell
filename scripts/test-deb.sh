@@ -16,7 +16,7 @@ case "$repository_path" in
     ;;
 esac
 
-for command in ar grep tar uname; do
+for command in ar cmp grep tar uname; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -67,6 +67,8 @@ test -s "$temporary/usr/share/doc/osmanthus/ssm.md.gz"
 gzip -cd "$temporary/usr/share/doc/osmanthus/README.md.gz" | grep -Fq "caller cgroup"
 gzip -cd "$temporary/usr/share/doc/osmanthus/operations.md.gz" | grep -Fq "dedicated transient systemd service"
 test -s "$temporary/usr/share/osmanthus/ssm/osmanthus-session.json"
+cmp -s ops/ssm/osmanthus-session.json \
+  "$temporary/usr/share/osmanthus/ssm/osmanthus-session.json"
 "$temporary/usr/bin/osmanthus" --version | grep -Fx "osmanthus $version"
 "$temporary/usr/bin/osmanthus" daemon --help | grep -F decommission
 "$temporary/usr/bin/osmanthus" maintenance --help | grep -F grant

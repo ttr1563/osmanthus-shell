@@ -45,6 +45,8 @@ test -s "$install_root/usr/share/doc/osmanthus/ssm.md"
 grep -Fq "caller cgroup" "$install_root/usr/share/doc/osmanthus/README.md"
 grep -Fq "dedicated transient systemd service" "$install_root/usr/share/doc/osmanthus/operations.md"
 test -s "$install_root/usr/share/osmanthus/ssm/osmanthus-session.json"
+cmp -s ops/ssm/osmanthus-session.json \
+  "$install_root/usr/share/osmanthus/ssm/osmanthus-session.json"
 "$install_root/usr/bin/osmanthus" --version | grep -Fx "osmanthus $version"
 "$install_root/usr/bin/osmanthus" daemon --help | grep -F "decommission"
 "$install_root/usr/bin/osmanthus" maintenance --help | grep -F "grant"

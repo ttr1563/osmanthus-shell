@@ -29,6 +29,33 @@ fn initialize(root: &Path) {
 }
 
 #[test]
+fn ssm_session_document_uses_only_the_audited_linux_entry_point() {
+    let document: serde_json::Value =
+        serde_json::from_str(include_str!("../ops/ssm/osmanthus-session.json")).unwrap();
+    assert_eq!(document["schemaVersion"], "1.0");
+    assert_eq!(document["sessionType"], "Standard_Stream");
+
+    let inputs = document["inputs"].as_object().unwrap();
+    assert_eq!(inputs.len(), 12);
+    assert_eq!(inputs["s3BucketName"], "");
+    assert_eq!(inputs["s3KeyPrefix"], "");
+    assert_eq!(inputs["s3EncryptionEnabled"], true);
+    assert_eq!(inputs["cloudWatchLogGroupName"], "");
+    assert_eq!(inputs["cloudWatchEncryptionEnabled"], true);
+    assert_eq!(inputs["cloudWatchStreamingEnabled"], false);
+    assert_eq!(inputs["kmsKeyId"], "");
+    assert_eq!(inputs["runAsEnabled"], false);
+    assert_eq!(inputs["runAsDefaultUser"], "");
+    assert_eq!(inputs["idleSessionTimeout"], "20");
+    assert_eq!(inputs["maxSessionDuration"], "60");
+    assert_eq!(inputs["shellProfile"]["windows"], "");
+    assert_eq!(
+        inputs["shellProfile"]["linux"],
+        "exec /usr/bin/osmanthus-shell"
+    );
+}
+
+#[test]
 fn init_creates_private_state_and_status() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
