@@ -151,8 +151,11 @@ First restore the managed account's original shell:
 
 ```bash
 sudo osmanthus policy monitor remove "$(id -u ssm-user)"
+getent passwd ssm-user
+! grep -Fxq /usr/bin/osmanthus-shell /etc/shells
 ```
 
-Only then remove or stop authorizing the custom AWS document. AWS IAM and
-document changes are external operations and are not rolled back by the Osmanthus
-package manager.
+The account must show its recorded original shell. If this was the final managed
+login shell, the exact `grep` check must also fail. Only then remove or stop
+authorizing the custom AWS document. AWS IAM and document changes are external
+operations and are not rolled back by the Osmanthus package manager.

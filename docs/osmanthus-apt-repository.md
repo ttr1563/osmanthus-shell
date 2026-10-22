@@ -102,7 +102,8 @@ For every advertised Debian/Ubuntu version and architecture:
 3. Run `apt-get update`, install Osmanthus, and confirm `osmanthusd` reports
    `Kernel backend: Enforcing`.
 4. Verify protected delete, direct truncate, opt-in non-truncating write,
-   scoped maintenance, audit evidence, monitored login rollback, authenticated
+   scoped maintenance, audit evidence, monitored login rollback, removal of the
+   final `/usr/bin/osmanthus-shell` registration from `/etc/shells`, authenticated
    decommission, and uninstall.
 5. Upgrade from the immediately previous installable version without losing
    policy or audit state.

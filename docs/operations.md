@@ -255,6 +255,8 @@ explicit decommission:
 
 ```bash
 sudo osmanthus policy monitor remove UID
+getent passwd UID
+! grep -Fxq /usr/bin/osmanthus-shell /etc/shells
 sudo osmanthus daemon decommission
 sudo dnf remove osmanthus        # or: sudo apt-get remove osmanthus
 ```
@@ -262,7 +264,9 @@ sudo dnf remove osmanthus        # or: sudo apt-get remove osmanthus
 The package uninstall script refuses while `/sys/fs/bpf/osmanthus` exists or an
 account still uses `/usr/bin/osmanthus-shell`. Ordinary `systemctl stop` does not
 remove pinned enforcement. After those checks pass, package removal stops and
-disables the systemd unit. Audit and policy files are retained for recovery.
+disables the systemd unit. The `getent` result must show the recorded original
+shell, and the exact `grep` check must fail after removal of the final managed
+login shell. Audit and policy files are retained for recovery.
 
 ## Incident boundary
 

@@ -92,7 +92,8 @@ On every advertised architecture:
    `osmanthus`.
 3. Confirm the daemon is `Enforcing`, then exercise protected delete, direct
    truncate, opt-in write, maintenance scoping, audit failure, monitored login
-   rollback, authenticated decommission, and uninstall.
+   rollback, removal of the final `/usr/bin/osmanthus-shell` registration from
+   `/etc/shells`, authenticated decommission, and uninstall.
 4. Upgrade from the previous installable version and verify policy/audit state
    preservation.
 5. Run an explicit `dnf downgrade` to the immediately previous package and
