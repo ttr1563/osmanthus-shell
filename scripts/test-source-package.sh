@@ -24,6 +24,12 @@ prefix="osmanthus-${version}"
 scripts/package-source.sh "$version" "$first" >/dev/null
 scripts/package-source.sh "$version" "$second" >/dev/null
 cmp -s "$first" "$second"
+first_checksum="$(sha256sum "$first")"
+if scripts/package-source.sh "$version" "$first" >/dev/null 2>&1; then
+  echo "existing source archive was accepted for replacement" >&2
+  exit 1
+fi
+test "$(sha256sum "$first")" = "$first_checksum"
 tar -tzf "$first" > "$listing"
 
 test "$(awk -F/ 'NF { print $1 }' "$listing" | sort -u)" = "$prefix"

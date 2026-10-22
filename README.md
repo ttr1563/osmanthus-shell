@@ -102,9 +102,10 @@ these commands. Binary package builders require a committed, clean worktree at
 both the start of the build and immediately before artifact placement; this
 prevents reviewed source archives and binaries from representing different
 inputs. They also refuse to replace an existing same-version artifact; publish a
-new version instead. The source archive is generated from committed `HEAD`, not the working
-tree, and its test requires two byte-identical builds while excluding historical
-package repositories, build output, and the legacy Homebrew formula.
+new version instead. The source archive is generated from one fixed committed
+`HEAD`, not the working tree, and also refuses to replace an existing artifact.
+Its test requires two byte-identical builds while excluding historical package
+repositories, build output, and the legacy Homebrew formula.
 The deb builder maps native Linux `x86_64` to Debian `amd64` and `aarch64` to
 `arm64`. The deb and RPM builders deliberately reject cross-packaging and
 unsupported hosts. Native ARM64 build, package install, kernel enforcement,
