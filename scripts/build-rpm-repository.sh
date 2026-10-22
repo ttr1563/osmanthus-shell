@@ -65,7 +65,7 @@ temporary="$(mktemp -d)"
 repository_stage=""
 cleanup() {
   rm -rf "$temporary"
-  if [[ -n "$repository_stage" && -e "$repository_stage" ]]; then
+  if [[ -n "$repository_stage" && ( -e "$repository_stage" || -L "$repository_stage" ) ]]; then
     discard_osmanthus_repository_stage "$output_root" "$repository_stage"
   fi
 }
