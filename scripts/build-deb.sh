@@ -82,7 +82,7 @@ Version: ${OSMANTHUS_DEB_VERSION}
 Architecture: $deb_architecture
 Maintainer: Osmanthus maintainers <ttr1563@users.noreply.github.com>
 Installed-Size: ${installed_size}
-Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, zlib1g
+Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, systemd, zlib1g
 Conflicts: onyx
 Section: admin
 Priority: optional

@@ -42,6 +42,9 @@ fi
 
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
+rpm -qp --requires "$package" > "$temporary/requires"
+grep -Fxq 'shadow-utils' "$temporary/requires"
+grep -Fxq 'systemd' "$temporary/requires"
 install_root="$temporary/root"
 mkdir -p "$install_root/var/lib/rpm"
 rpm --root "$install_root" --dbpath /var/lib/rpm --initdb

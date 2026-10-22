@@ -5,6 +5,7 @@ Summary:        Lightweight command guard for Linux servers
 License:        MIT
 URL:            https://github.com/ttr1563/osmanthus-shell
 Requires:       shadow-utils
+Requires:       systemd
 Conflicts:      onyx
 Source0:        osmanthus
 Source1:        LICENSE

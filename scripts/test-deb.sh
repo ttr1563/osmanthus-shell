@@ -50,6 +50,8 @@ tar -xzf "$temporary/data.tar.gz" -C "$temporary"
 grep -Fx "Package: osmanthus" "$temporary/control"
 grep -Fx "Version: ${OSMANTHUS_DEB_VERSION}" "$temporary/control"
 grep -Fx "Architecture: $deb_architecture" "$temporary/control"
+grep -Fx "Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, systemd, zlib1g" \
+  "$temporary/control"
 grep -Fx "Conflicts: onyx" "$temporary/control"
 grep -Fq "/sys/fs/bpf/osmanthus" "$temporary/prerm"
 grep -Fq "/usr/bin/osmanthus-shell" "$temporary/prerm"
