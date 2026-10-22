@@ -5,6 +5,7 @@ repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
 source scripts/package-version.sh
 source scripts/signing-identity.sh
+source scripts/repository-publish.sh
 output_root="${1:-docs/rpm}"
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
@@ -19,7 +20,7 @@ key_file="${OSMANTHUS_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-OSMANTHUS}"
 signing_key="${OSMANTHUS_GPG_KEY_ID:-}"
 gpg_home="${OSMANTHUS_GPG_HOME:-}"
 passphrase_file="${OSMANTHUS_GPG_PASSPHRASE_FILE:-}"
-for command in createrepo_c find gpg install realpath rpm rpmbuild sha256sum sort; do
+for command in cp createrepo_c find gpg install mktemp python3 realpath rpm rpmbuild sha256sum sort; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -61,8 +62,19 @@ for package_directory in "${package_directories[@]}"; do
 done
 
 temporary="$(mktemp -d)"
-trap 'rm -rf "$temporary"' EXIT
-bootstrap_output="$output_root/osmanthus-release-1-1.noarch.rpm"
+repository_stage=""
+cleanup() {
+  rm -rf "$temporary"
+  if [[ -n "$repository_stage" && -e "$repository_stage" ]]; then
+    discard_osmanthus_repository_stage "$output_root" "$repository_stage"
+  fi
+}
+trap cleanup EXIT
+prepare_osmanthus_repository_stage "$output_root"
+repository_stage="$OSMANTHUS_REPOSITORY_STAGE"
+mapfile -t package_directories < <(find "$repository_stage/al2023" -mindepth 2 -maxdepth 2 \
+  -type d -name Packages -print | sort)
+bootstrap_output="$repository_stage/osmanthus-release-1-1.noarch.rpm"
 new_bootstrap=0
 if [[ -e "$bootstrap_output" || -L "$bootstrap_output" ]]; then
   if [[ ! -f "$bootstrap_output" || -L "$bootstrap_output" ]]; then
@@ -138,20 +150,22 @@ for package_directory in "${package_directories[@]}"; do
   createrepo_c --checksum sha256 --workers 1 "$metadata_root"
   GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
     --armor --detach-sign "$metadata_root/repodata/repomd.xml"
-  rm -rf "$output_root/al2023/$architecture/repodata"
-  cp -a "$metadata_root/repodata" "$output_root/al2023/$architecture/repodata"
+  rm -rf "$repository_stage/al2023/$architecture/repodata"
+  cp -a "$metadata_root/repodata" "$repository_stage/al2023/$architecture/repodata"
 done
 
-install -m0644 "$key_file" "$output_root/RPM-GPG-KEY-OSMANTHUS"
+install -m0644 "$key_file" "$repository_stage/RPM-GPG-KEY-OSMANTHUS"
 (
-  cd "$output_root"
+  cd "$repository_stage"
   {
     printf '%s\n' RPM-GPG-KEY-OSMANTHUS osmanthus-release-1-1.noarch.rpm
     find al2023 -type f \( -name '*.rpm' -o -name 'repomd.xml' \) -print | sort
   } | xargs sha256sum > SHA256SUMS
 )
 GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
-  --armor --detach-sign "$output_root/SHA256SUMS"
+  --armor --detach-sign "$repository_stage/SHA256SUMS"
 
+publish_osmanthus_repository_stage "$output_root" "$repository_stage"
+repository_stage=""
 mapfile -t signed_packages < <(find "$output_root/al2023" -type f -name 'osmanthus-*.rpm' -print | sort)
 sha256sum "$output_root/osmanthus-release-1-1.noarch.rpm" "${signed_packages[@]}"

@@ -4,6 +4,7 @@ set -euo pipefail
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
 source scripts/signing-identity.sh
+source scripts/repository-publish.sh
 output_root="${1:-docs/apt}"
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
@@ -18,7 +19,7 @@ key_file="${OSMANTHUS_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-OSMANTHUS}"
 signing_key="${OSMANTHUS_GPG_KEY_ID:-}"
 gpg_home="${OSMANTHUS_GPG_HOME:-}"
 passphrase_file="${OSMANTHUS_GPG_PASSPHRASE_FILE:-}"
-for command in ar awk cp date find gpg gzip install md5sum realpath sha256sum sort stat tar xargs; do
+for command in ar awk cp date find gpg gzip install md5sum mktemp python3 realpath sha256sum sort stat tar xargs; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -42,7 +43,14 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
 fi
 
 temporary="$(mktemp -d)"
-trap 'rm -rf "$temporary"' EXIT
+repository_stage=""
+cleanup() {
+  rm -rf "$temporary"
+  if [[ -n "$repository_stage" && -e "$repository_stage" ]]; then
+    discard_osmanthus_repository_stage "$output_root" "$repository_stage"
+  fi
+}
+trap cleanup EXIT
 metadata_root="$temporary/apt"
 declare -A architecture_seen=()
 for index in "${!packages[@]}"; do
@@ -132,19 +140,24 @@ GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
 GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
   --armor --detach-sign --output "$metadata_root/dists/stable/Release.gpg" "$release"
 
-rm -rf "$output_root/dists"
-cp -a "$metadata_root/dists" "$output_root/dists"
-install -m0644 "$key_file" "$output_root/osmanthus.asc"
-install -m0644 packaging/deb/osmanthus.sources "$output_root/osmanthus.sources"
+prepare_osmanthus_repository_stage "$output_root"
+repository_stage="$OSMANTHUS_REPOSITORY_STAGE"
+rm -rf "$repository_stage/dists"
+cp -a "$metadata_root/dists" "$repository_stage/dists"
+install -m0644 "$key_file" "$repository_stage/osmanthus.asc"
+install -m0644 packaging/deb/osmanthus.sources "$repository_stage/osmanthus.sources"
 
 (
-  cd "$output_root"
+  cd "$repository_stage"
   {
     printf '%s\n' osmanthus.asc osmanthus.sources
     find dists pool -type f -print | sort
   } | xargs sha256sum > SHA256SUMS
 )
 GNUPGHOME="$gpg_home" gpg "${gpg_arguments[@]}" \
-  --armor --detach-sign --output "$output_root/SHA256SUMS.asc" "$output_root/SHA256SUMS"
+  --armor --detach-sign --output "$repository_stage/SHA256SUMS.asc" "$repository_stage/SHA256SUMS"
+
+publish_osmanthus_repository_stage "$output_root" "$repository_stage"
+repository_stage=""
 
 sha256sum "${packages[@]}" "$output_root/dists/stable/InRelease"

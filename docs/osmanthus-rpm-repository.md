@@ -78,6 +78,10 @@ is unchanged.
 Before the first signature is written, the builder also requires the public key
 file to contain exactly one primary key whose full fingerprint matches the
 selected secret signing key. A mismatch fails without modifying an unsigned RPM.
+RPM signing and metadata generation occur only in a sibling staging tree. After
+completion, the builder atomically exchanges the whole repository directory with
+`renameat2(RENAME_EXCHANGE)`, so a pre-publication failure leaves accepted RPMs
+and metadata unchanged.
 
 ## Clean-host release gate
 

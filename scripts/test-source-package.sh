@@ -57,10 +57,12 @@ for required in \
   scripts/build-rpm.sh \
   scripts/package-source.sh \
   scripts/package-version.sh \
+  scripts/repository-publish.sh \
   scripts/signing-identity.sh \
   scripts/test-deb.sh \
   scripts/test-rpm.sh \
   scripts/test-installed-truncate.sh \
+  scripts/test-repository-publish.sh \
   scripts/test-signed-repositories.sh \
   scripts/test-source-package.sh \
   scripts/verify-apt-repository.sh \

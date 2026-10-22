@@ -70,6 +70,9 @@ arguments, Pages artifacts, or logs.
 The repository builder verifies that the public key file contains exactly one
 primary key and that its full fingerprint matches the selected secret signing
 key before writing repository metadata.
+It completes and signs a sibling staging tree, then atomically exchanges the
+whole repository directory with `renameat2(RENAME_EXCHANGE)`. A signing or
+metadata failure therefore leaves the previously accepted tree unchanged.
 
 ```console
 export OSMANTHUS_GPG_HOME=/secure/path/to/osmanthus-signing-home
