@@ -9,11 +9,15 @@ temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 output_root="$temporary/repository"
 mkdir -p "$output_root/metadata"
+chmod 0751 "$output_root"
 printf 'old\n' > "$output_root/metadata/current"
+expected_owner="$(stat -c '%u:%g' "$output_root")"
 
 prepare_osmanthus_repository_stage "$output_root"
 stage="$OSMANTHUS_REPOSITORY_STAGE"
 test "$(cat "$stage/metadata/current")" = old
+test "$(stat -c '%a' "$stage")" = 751
+test "$(stat -c '%u:%g' "$stage")" = "$expected_owner"
 printf 'rejected\n' > "$stage/metadata/current"
 discard_osmanthus_repository_stage "$output_root" "$stage"
 test "$(cat "$output_root/metadata/current")" = old
@@ -27,6 +31,8 @@ printf 'complete\n' > "$stage/metadata/signed"
 publish_osmanthus_repository_stage "$output_root" "$stage"
 test "$(cat "$output_root/metadata/current")" = new
 test "$(cat "$output_root/metadata/signed")" = complete
+test "$(stat -c '%a' "$output_root")" = 751
+test "$(stat -c '%u:%g' "$output_root")" = "$expected_owner"
 test ! -e "$stage"
 
 outside="$temporary/nested/outside"

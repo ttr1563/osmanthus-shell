@@ -13,7 +13,9 @@ prepare_osmanthus_repository_stage() {
   output_parent="$(dirname "$output_root")"
   output_name="$(basename "$output_root")"
   OSMANTHUS_REPOSITORY_STAGE="$(mktemp -d "$output_parent/.${output_name}.osmanthus-stage.XXXXXX")"
-  if ! cp -a "$output_root/." "$OSMANTHUS_REPOSITORY_STAGE/"; then
+  if ! cp -a "$output_root/." "$OSMANTHUS_REPOSITORY_STAGE/" \
+    || ! chown --reference="$output_root" "$OSMANTHUS_REPOSITORY_STAGE" \
+    || ! chmod --reference="$output_root" "$OSMANTHUS_REPOSITORY_STAGE"; then
     rm -rf -- "$OSMANTHUS_REPOSITORY_STAGE"
     OSMANTHUS_REPOSITORY_STAGE=""
     return 1

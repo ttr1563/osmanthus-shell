@@ -20,7 +20,7 @@ key_file="${OSMANTHUS_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-OSMANTHUS}"
 signing_key="${OSMANTHUS_GPG_KEY_ID:-}"
 gpg_home="${OSMANTHUS_GPG_HOME:-}"
 passphrase_file="${OSMANTHUS_GPG_PASSPHRASE_FILE:-}"
-for command in cp createrepo_c find gpg install mktemp python3 realpath rpm rpmbuild sha256sum sort; do
+for command in chmod chown cp createrepo_c find gpg install mktemp python3 realpath rpm rpmbuild sha256sum sort; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1

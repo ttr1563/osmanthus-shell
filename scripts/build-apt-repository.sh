@@ -19,7 +19,7 @@ key_file="${OSMANTHUS_GPG_PUBLIC_KEY:-packaging/rpm/RPM-GPG-KEY-OSMANTHUS}"
 signing_key="${OSMANTHUS_GPG_KEY_ID:-}"
 gpg_home="${OSMANTHUS_GPG_HOME:-}"
 passphrase_file="${OSMANTHUS_GPG_PASSPHRASE_FILE:-}"
-for command in ar awk cp date find gpg gzip install md5sum mktemp python3 realpath sha256sum sort stat tar xargs; do
+for command in ar awk chmod chown cp date find gpg gzip install md5sum mktemp python3 realpath sha256sum sort stat tar xargs; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
