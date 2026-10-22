@@ -1,28 +1,70 @@
 #[cfg(target_os = "linux")]
 fn main() -> osmanthus_guard::Result<()> {
     use std::collections::BTreeSet;
-    use std::fs;
-    use std::path::PathBuf;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
 
     use libbpf_rs::{Link, MapCore, MapFlags, MapHandle};
     use osmanthus_guard::daemon::EnforcementBackend;
     use osmanthus_guard::enforcement::{EnforcementPolicy, ProtectedAction, ProtectedRoot};
-    use osmanthus_guard::linux_bpf::PersistentLinuxBpfBackend;
+    use osmanthus_guard::linux_bpf::{PIN_DIRECTORY, PersistentLinuxBpfBackend};
 
+    let mut arguments = std::env::args_os().skip(1);
+    if arguments.next().as_deref() != Some(std::ffi::OsStr::new("--acknowledge-disposable-host")) {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "usage: bpf-persistence-smoke --acknowledge-disposable-host ABSOLUTE_EMPTY_TEST_DIRECTORY"
+                .to_owned(),
+        ));
+    }
+    let root = arguments.next().map(PathBuf::from).ok_or_else(|| {
+        osmanthus_guard::OsmanthusError::InvalidState(
+            "usage: bpf-persistence-smoke --acknowledge-disposable-host ABSOLUTE_EMPTY_TEST_DIRECTORY"
+                .to_owned(),
+        )
+    })?;
+    if arguments.next().is_some() {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "usage: bpf-persistence-smoke --acknowledge-disposable-host ABSOLUTE_EMPTY_TEST_DIRECTORY"
+                .to_owned(),
+        ));
+    }
     if unsafe { libc::geteuid() } != 0 {
         return Err(osmanthus_guard::OsmanthusError::RootRequired);
     }
-    let root = std::env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .ok_or_else(|| {
-            osmanthus_guard::OsmanthusError::InvalidState(
-                "usage: bpf-persistence-smoke ABSOLUTE_TEST_DIRECTORY".to_owned(),
-            )
-        })?;
+    if Path::new(PIN_DIRECTORY).exists() {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "persistence smoke test refuses an existing persistent Osmanthus backend".to_owned(),
+        ));
+    }
+    if !root.is_absolute()
+        || root == Path::new("/")
+        || root.symlink_metadata()?.file_type().is_symlink()
+    {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "persistence smoke root must be an existing canonical non-symlink directory other than /"
+                .to_owned(),
+        ));
+    }
+    let canonical_root = root.canonicalize()?;
+    if canonical_root != root || !root.is_dir() {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "persistence smoke root must be an existing canonical non-symlink directory other than /"
+                .to_owned(),
+        ));
+    }
+    if root.read_dir()?.next().is_some() {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(format!(
+            "persistence smoke root must be empty: {}",
+            root.display()
+        )));
+    }
     let file = root.join("blocked-after-loader-exit");
-    fs::create_dir_all(&root)?;
-    fs::write(&file, b"kept")?;
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&file)?
+        .write_all(b"kept")?;
     let policy = EnforcementPolicy::new(vec![ProtectedRoot::new(
         &root,
         BTreeSet::from([ProtectedAction::Delete]),

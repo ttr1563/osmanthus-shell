@@ -44,6 +44,8 @@ for required in \
   docs/operations.md \
   docs/ssm.md \
   docs/windows-server.md \
+  examples/bpf-persistence-smoke.rs \
+  examples/bpf-smoke.rs \
   ops/logrotate/osmanthus \
   ops/ssm/osmanthus-session.json \
   ops/systemd/osmanthusd.service \

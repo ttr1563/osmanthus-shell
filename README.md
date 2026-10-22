@@ -304,11 +304,24 @@ a current support claim.
 ```bash
 cargo test --all-targets --all-features
 cargo clippy --all-targets --all-features -- -D warnings
+test ! -e /sys/fs/bpf/osmanthus
 sudo ./target/debug/examples/bpf-smoke
 ```
 
-The BPF smoke test uses a temporary directory under `/var/tmp`; do not run it on a
-host whose kernel capabilities and workload impact have not been reviewed.
+The transient BPF smoke test uses a temporary directory under `/var/tmp` and
+refuses to run while a packaged or persistent Osmanthus backend is attached. Do
+not stop the daemon and remove pins by hand to satisfy this precondition. Use the
+installed-package acceptance helper below on an enrolled host.
+
+The separate persistence smoke test replaces pinned programs, simulates an
+incompatible ABI, and decommissions its test backend. Run it only on a disposable
+host with no existing Osmanthus pins, using an existing canonical empty root:
+
+```bash
+sudo install -d -m 0700 /var/tmp/osmanthus-persistence-smoke
+sudo ./target/debug/examples/bpf-persistence-smoke \
+  --acknowledge-disposable-host /var/tmp/osmanthus-persistence-smoke
+```
 
 For installed-package acceptance, first register a dedicated disposable root with
 only the `truncate` action, then exercise the daemon-loaded policy rather than the

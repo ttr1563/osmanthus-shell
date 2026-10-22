@@ -23,6 +23,12 @@ fn main() -> osmanthus_guard::Result<()> {
     if unsafe { libc::geteuid() } != 0 {
         return Err(osmanthus_guard::OsmanthusError::RootRequired);
     }
+    if std::path::Path::new(osmanthus_guard::linux_bpf::PIN_DIRECTORY).exists() {
+        return Err(osmanthus_guard::OsmanthusError::InvalidState(
+            "development BPF smoke test refuses an existing persistent Osmanthus backend"
+                .to_owned(),
+        ));
+    }
     let temporary = TempDir::new_in("/var/tmp")?;
     let protected = temporary.path().join("protected");
     let topology_protected = temporary.path().join("topology-protected");
