@@ -39,7 +39,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Initialize TOTP authentication and local audit storage.
+    /// Initialize the legacy explicit-wrapper compatibility mode.
     Init {
         #[arg(long, default_value = "Osmanthus")]
         issuer: String,
@@ -49,12 +49,12 @@ enum Commands {
         #[arg(long)]
         no_qr: bool,
     },
-    /// Evaluate and, when permitted, execute a command.
+    /// Compatibility wrapper: evaluate and, when permitted, execute a command.
     Run {
         #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<OsString>,
     },
-    /// Evaluate a command without creating an event or executing it.
+    /// Compatibility diagnostic: evaluate without creating an event or executing.
     Check {
         #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<OsString>,
@@ -478,9 +478,18 @@ fn initialize(root: &Path, issuer: String, account: Option<String>, no_qr: bool)
     let record = AuditRecord::new("initialized")?;
     audit::append(root, &record)?;
 
-    println!("Osmanthus initialized at {}", root.display());
-    println!("Audit log: {}", root.join(config::AUDIT_FILE).display());
-    println!("Run commands with: osmanthus run -- <command>");
+    println!(
+        "Legacy explicit-wrapper state initialized at {}",
+        root.display()
+    );
+    println!(
+        "Compatibility audit log: {}",
+        root.join(config::AUDIT_FILE).display()
+    );
+    println!("Compatibility commands require: osmanthus run -- <command>");
+    println!(
+        "Linux protected-root enforcement uses: sudo osmanthus policy init, osmanthusd, and configured protected roots"
+    );
     print_enrollment(&config, no_qr)?;
     let record = AuditRecord::new("enrollment_displayed")?;
     audit::append(root, &record)?;
