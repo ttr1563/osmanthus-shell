@@ -1,10 +1,13 @@
 use std::ffi::{CStr, OsStr};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use uuid::Uuid;
 
 use crate::{OsmanthusError, Result};
 
@@ -73,33 +76,102 @@ pub fn validate_real_shell(path: &Path) -> Result<()> {
 }
 
 pub fn ensure_registered() -> Result<()> {
-    let path = Path::new(SYSTEM_SHELLS);
+    update_registration(Path::new(SYSTEM_SHELLS), 0, true)
+}
+
+pub fn unregister() -> Result<()> {
+    update_registration(Path::new(SYSTEM_SHELLS), 0, false)
+}
+
+fn update_registration(path: &Path, expected_uid: u32, register: bool) -> Result<()> {
     let mut file = OpenOptions::new()
         .read(true)
-        .append(true)
         .custom_flags(libc::O_NOFOLLOW)
         .open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file()
-        || metadata.uid() != 0
+        || metadata.uid() != expected_uid
         || metadata.permissions().mode() & 0o022 != 0
         || metadata.len() > 65_536
     {
         return Err(OsmanthusError::UnsafePath(format!(
-            "{SYSTEM_SHELLS} must be a root-owned, non-writable regular file of at most 64 KiB"
+            "{} must be owned by uid {expected_uid}, non-writable by group/others, regular, and at most 64 KiB",
+            path.display()
         )));
     }
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    if contents.lines().any(|line| line.trim() == OSMANTHUS_SHELL) {
+    let present = contents.lines().any(|line| line.trim() == OSMANTHUS_SHELL);
+    if present == register {
         return Ok(());
     }
-    if !contents.ends_with('\n') && !contents.is_empty() {
-        file.write_all(b"\n")?;
+
+    let replacement = if register {
+        if !contents.ends_with('\n') && !contents.is_empty() {
+            contents.push('\n');
+        }
+        contents.push_str(OSMANTHUS_SHELL);
+        contents.push('\n');
+        contents
+    } else {
+        contents
+            .split_inclusive('\n')
+            .filter(|line| line.trim() != OSMANTHUS_SHELL)
+            .collect()
+    };
+    replace_shells_file(path, &metadata, replacement.as_bytes())
+}
+
+fn replace_shells_file(path: &Path, original: &fs::Metadata, contents: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| OsmanthusError::UnsafePath(path.display().to_string()))?;
+    let temporary = parent.join(format!(".osmanthus-shells-{}.tmp", Uuid::new_v4()));
+    let result = (|| -> Result<()> {
+        let mode = original.permissions().mode() & 0o7777;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&temporary)?;
+        let temporary_metadata = file.metadata()?;
+        if temporary_metadata.uid() != original.uid() || temporary_metadata.gid() != original.gid()
+        {
+            let status = unsafe {
+                libc::fchown(
+                    file.as_raw_fd(),
+                    original.uid() as libc::uid_t,
+                    original.gid() as libc::gid_t,
+                )
+            };
+            if status != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(mode))?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+
+        let current = fs::symlink_metadata(path)?;
+        if current.file_type().is_symlink()
+            || !current.is_file()
+            || current.dev() != original.dev()
+            || current.ino() != original.ino()
+        {
+            return Err(OsmanthusError::InvalidState(format!(
+                "{} changed while updating login-shell registration",
+                path.display()
+            )));
+        }
+        fs::rename(&temporary, path)?;
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    writeln!(file, "{OSMANTHUS_SHELL}")?;
-    file.sync_data()?;
-    Ok(())
+    result
 }
 
 pub fn set_shell(uid: u32, expected: &Path, replacement: &Path) -> Result<()> {
@@ -161,6 +233,8 @@ fn validate_executable(path: &Path, label: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
 
     #[test]
@@ -177,5 +251,51 @@ mod tests {
     #[test]
     fn refuses_root_enrollment() {
         assert!(account(0).is_err());
+    }
+
+    #[test]
+    fn registration_is_idempotent_and_removable_without_changing_file_metadata() {
+        let temp = TempDir::new().unwrap();
+        let shells = temp.path().join("shells");
+        fs::write(&shells, b"# managed shells\n/bin/sh\n/bin/bash").unwrap();
+        fs::set_permissions(&shells, fs::Permissions::from_mode(0o644)).unwrap();
+        let before = fs::metadata(&shells).unwrap();
+        let uid = before.uid();
+
+        update_registration(&shells, uid, true).unwrap();
+        update_registration(&shells, uid, true).unwrap();
+        let registered = fs::read_to_string(&shells).unwrap();
+        assert_eq!(registered.matches(OSMANTHUS_SHELL).count(), 1);
+        assert_eq!(
+            registered,
+            "# managed shells\n/bin/sh\n/bin/bash\n/usr/bin/osmanthus-shell\n"
+        );
+
+        update_registration(&shells, uid, false).unwrap();
+        update_registration(&shells, uid, false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&shells).unwrap(),
+            "# managed shells\n/bin/sh\n/bin/bash\n"
+        );
+        let after = fs::metadata(&shells).unwrap();
+        assert_eq!(after.uid(), before.uid());
+        assert_eq!(after.gid(), before.gid());
+        assert_eq!(after.permissions().mode() & 0o7777, 0o644);
+    }
+
+    #[test]
+    fn registration_rejects_symlinked_or_group_writable_shell_files() {
+        let temp = TempDir::new().unwrap();
+        let target = temp.path().join("target");
+        let shells = temp.path().join("shells");
+        fs::write(&target, b"/bin/sh\n").unwrap();
+        std::os::unix::fs::symlink(&target, &shells).unwrap();
+        let uid = fs::metadata(&target).unwrap().uid();
+        assert!(update_registration(&shells, uid, true).is_err());
+
+        fs::remove_file(&shells).unwrap();
+        fs::write(&shells, b"/bin/sh\n").unwrap();
+        fs::set_permissions(&shells, fs::Permissions::from_mode(0o664)).unwrap();
+        assert!(update_registration(&shells, uid, true).is_err());
     }
 }

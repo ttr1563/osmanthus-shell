@@ -114,7 +114,9 @@ Kernel exec events independently cover descendant `execve` and `execveat`.
 
 `policy monitor add UID --shell /real/shell` validates the current NSS account,
 records its real shell, reloads the daemon policy, and then uses root-owned
-`usermod` to select `/usr/bin/osmanthus-shell`. Removal performs the reverse change.
+`usermod` to select `/usr/bin/osmanthus-shell`. Removal performs the reverse change;
+removing the final managed login shell also removes the Osmanthus entry from
+`/etc/shells` while preserving that file's ownership and mode.
 Policy, daemon, shell transition, and audit failures use compensating rollback;
 concurrent shell changes are rejected rather than overwritten.
 

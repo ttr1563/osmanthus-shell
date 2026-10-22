@@ -179,8 +179,9 @@ sudo osmanthus policy list
 
 When `--shell` is present, Osmanthus verifies that it is the account's current shell,
 stores it for rollback, and changes the account to `/usr/bin/osmanthus-shell`. Removing
-the monitored UID restores the recorded real shell. Omitting `--shell` enrolls
-exec evidence only and does not change the login account.
+the monitored UID restores the recorded real shell. Removing the final managed
+login shell also removes the Osmanthus entry from `/etc/shells`. Omitting
+`--shell` enrolls exec evidence only and does not change the login account.
 
 AWS SSM does not necessarily enter through the account login shell. Use the
 custom Session document and IAM restrictions in [docs/ssm.md](docs/ssm.md) to
