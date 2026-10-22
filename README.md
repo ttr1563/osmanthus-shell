@@ -303,8 +303,9 @@ a current support claim.
 ## Development checks
 
 ```bash
-cargo test --all-targets --all-features
-cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+cargo test --locked --all-targets --all-features
+cargo clippy --locked --all-targets --all-features -- -D warnings
 test ! -e /sys/fs/bpf/osmanthus
 sudo ./target/debug/examples/bpf-smoke
 ```
