@@ -55,6 +55,8 @@ package_root="$temporary/package"
 mkdir -p \
   "$package_root/etc/logrotate.d" \
   "$package_root/usr/bin" \
+  "$package_root/usr/libexec" \
+  "$package_root/usr/share/polkit-1/rules.d" \
   "$package_root/usr/share/doc/osmanthus" \
   "$package_root/usr/share/osmanthus/ssm" \
   "$package_root/lib/systemd/system"
@@ -63,6 +65,9 @@ cargo build --release --locked
 install -m0755 "$target_dir/release/osmanthus" "$package_root/usr/bin/osmanthus"
 install -m0755 "$target_dir/release/osmanthusd" "$package_root/usr/bin/osmanthusd"
 install -m0755 "$target_dir/release/osmanthus-shell" "$package_root/usr/bin/osmanthus-shell"
+install -m0755 "$target_dir/release/osmanthus-polkit" "$package_root/usr/libexec/osmanthus-polkit"
+install -m0644 ops/polkit/00-osmanthus.rules \
+  "$package_root/usr/share/polkit-1/rules.d/00-osmanthus.rules"
 install -m0644 ops/logrotate/osmanthus "$package_root/etc/logrotate.d/osmanthus"
 install -m0644 ops/systemd/osmanthusd.service "$package_root/lib/systemd/system/osmanthusd.service"
 install -m0644 LICENSE "$package_root/usr/share/doc/osmanthus/copyright"
@@ -82,15 +87,15 @@ Version: ${OSMANTHUS_DEB_VERSION}
 Architecture: $deb_architecture
 Maintainer: Osmanthus maintainers <ttr1563@users.noreply.github.com>
 Installed-Size: ${installed_size}
-Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, systemd, zlib1g
+Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, polkitd, systemd, zlib1g
 Conflicts: onyx
 Section: admin
 Priority: optional
 Homepage: https://ttr1563.github.io/osmanthus-shell/
 Description: lightweight command guard for Linux servers
  Osmanthus uses a privileged daemon and Linux BPF LSM hooks to deny configured
- destructive filesystem operations below protected roots. Scoped maintenance
- leases require TOTP approval, and audit records are written as local JSONL.
+ destructive filesystem operations below protected roots. It also requires TOTP
+ for selected direct systemd service operations and writes local JSONL evidence.
 EOF
 printf '/etc/logrotate.d/osmanthus\n' > "$temporary/conffiles"
 cat > "$temporary/preinst" <<'EOF'

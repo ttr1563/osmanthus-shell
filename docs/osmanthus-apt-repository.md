@@ -101,18 +101,31 @@ For every advertised Debian/Ubuntu version and architecture:
 2. Confirm the announced full key fingerprint before installing it.
 3. Run `apt-get update`, install Osmanthus, and confirm `osmanthusd` reports
    `Kernel backend: Enforcing`.
-4. Verify protected delete, direct truncate, opt-in non-truncating write,
+4. Confirm that the package installed `polkitd`,
+   `/usr/libexec/osmanthus-polkit`, and
+   `/usr/share/polkit-1/rules.d/00-osmanthus.rules`. Register a disposable
+   canonical `.service` unit, then verify that direct non-root `systemctl stop`
+   and `restart` are denied while an unrelated service still follows the host
+   policy. Verify the TOTP-authenticated `osmanthus service` path and its
+   `service_control_*` audit events.
+5. Stop the daemon and separately make its audit path unavailable; protected
+   direct service requests must fail closed. Restore the package state before
+   continuing. Root, unit-file enable/disable/mask, and indirect dependency
+   stops are outside this named-service boundary.
+6. Verify protected delete, direct truncate, opt-in non-truncating write,
    scoped maintenance, audit evidence, monitored login rollback, removal of the
    final `/usr/bin/osmanthus-shell` registration from `/etc/shells`, authenticated
    decommission, and uninstall.
-5. Upgrade from the immediately previous installable version without losing
+7. Upgrade from the immediately previous installable version without losing
    policy or audit state.
-6. Explicitly install the immediately previous version, restart the daemon,
+   Repeat the protected and unrelated service checks across the protocol/helper
+   upgrade boundary.
+8. Explicitly install the immediately previous version, restart the daemon,
    and repeat a protected delete. If its BPF ABI is incompatible, use the
    documented authenticated decommission/fresh-attach procedure instead of
    deleting pins.
-7. Confirm removal retains `/etc/osmanthus` and `/var/log/osmanthus`, while
-   binaries, the unit, and BPF pins are absent.
+9. Confirm removal retains `/etc/osmanthus` and `/var/log/osmanthus`, while
+   binaries, the daemon unit, Polkit helper/rule, and BPF pins are absent.
 
 Do not treat package inspection or a container without BPF LSM as a substitute
 for this installed-kernel test.

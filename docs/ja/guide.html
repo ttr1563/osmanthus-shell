@@ -21,6 +21,10 @@ sudo osmanthus maintenance grant \
 
 sudo osmanthus policy maintenance set --default 15m --maximum 12h
 sudo osmanthus maintenance pause --path /srv/production/database --for 8h</code></pre><p>daemonはleaseをUnix socket接続元のkernel cgroupへ固定します。別login cgroupは遮断を維持しますが、同じcgroupを共有するprocessにはleaseが適用されます。SSMやservice entry pointでは専用の一時systemd serviceを使用します。hard-link境界の変更はleaseでも許可されません。</p></section>
+      <section><h2>保護対象systemd service</h2><p>filesystemとは別のpolicyでcanonicalな<code>.service</code> unitと直接のstart・停止を伴う実行時操作を指定します。vendor Polkit ruleは非root <code>systemctl</code>と同等のsystemd D-Bus requestをroot helperへ渡し、helperがdaemonの有効policyへ照会します。保護対象のrequestとpolicy・helper・daemon・audit障害は拒否し、保護外serviceはhost既存の認可へ戻します。</p><pre><code>sudo osmanthus policy service add --unit postgresql.service --action stop
+systemctl restart postgresql.service   # 非rootでは拒否
+sudo osmanthus service restart postgresql.service
+systemctl status postgresql.service</code></pre><p>認証済みcommandは承認を記録してからsystemdへ非同期jobを要求するため、最終状態は別途確認します。stop保護は直接のstop・kill・restart・try-restart・reload-or-restartを含みます。rootは保護対象外です。systemd 249–255ではenable・disable・maskにunit別情報がなく、依存関係やisolateによる間接停止も保護済みとは扱いません。</p></section>
       <section><h2>DBと情報持ち出し</h2><p>filesystemの完全性保護だけではcredential読取りやDB queryを止められません。identity別のsecret read、DB接続先、外向き通信先の制御は別の次段階とし、DB roleとDB固有auditも併用します。</p></section>
       <section><h2>担保しない範囲</h2><p>Osmanthusは管理対象の非root identityを制約するものです。root、侵害されたkernel、侵害されたboot chainは封じ込めません。TOTPは独立承認ですが、物理的な本人確認の証明ではありません。Windows Server native強制backendは未実装です。</p></section>
     </main>

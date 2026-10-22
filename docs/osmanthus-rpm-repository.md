@@ -90,18 +90,30 @@ On every advertised architecture:
 1. Verify the HTTPS-downloaded key fingerprint against the release notes.
 2. Install `osmanthus-release-1-1.noarch.rpm`, refresh DNF metadata, and install
    `osmanthus`.
-3. Confirm the daemon is `Enforcing`, then exercise protected delete, direct
+3. Confirm the package dependency and payload include Polkit,
+   `/usr/libexec/osmanthus-polkit`, and
+   `/usr/share/polkit-1/rules.d/00-osmanthus.rules`. Register a disposable
+   canonical `.service` unit. Direct non-root stop/restart must be denied, an
+   unrelated service must retain the host policy, and the TOTP-authenticated
+   Osmanthus command and `service_control_*` audit events must succeed.
+4. Stop the daemon and separately make its audit path unavailable; protected
+   direct service requests must fail closed. Restore the package state before
+   continuing. Root, unit-file enable/disable/mask, and indirect dependency
+   stops are outside this named-service boundary.
+5. Confirm the daemon is `Enforcing`, then exercise protected delete, direct
    truncate, opt-in write, maintenance scoping, audit failure, monitored login
    rollback, removal of the final `/usr/bin/osmanthus-shell` registration from
    `/etc/shells`, authenticated decommission, and uninstall.
-4. Upgrade from the previous installable version and verify policy/audit state
+6. Upgrade from the previous installable version and verify policy/audit state
    preservation.
-5. Run an explicit `dnf downgrade` to the immediately previous package and
+   Repeat the protected and unrelated service checks across the protocol/helper
+   upgrade boundary.
+7. Run an explicit `dnf downgrade` to the immediately previous package and
    repeat a protected delete. For an incompatible BPF ABI, follow the
    authenticated decommission/fresh-attach runbook; never remove individual
    pins.
-6. Confirm the package removal retains policy and audit evidence and removes
-   the unit, binaries, and decommissioned BPF pins.
+8. Confirm the package removal retains policy and audit evidence and removes
+   the daemon unit, binaries, Polkit helper/rule, and decommissioned BPF pins.
 
 ## Public installation and rollback
 

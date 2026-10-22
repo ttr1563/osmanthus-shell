@@ -50,7 +50,7 @@ tar -xzf "$temporary/data.tar.gz" -C "$temporary"
 grep -Fx "Package: osmanthus" "$temporary/control"
 grep -Fx "Version: ${OSMANTHUS_DEB_VERSION}" "$temporary/control"
 grep -Fx "Architecture: $deb_architecture" "$temporary/control"
-grep -Fx "Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, systemd, zlib1g" \
+grep -Fx "Depends: libc6 (>= 2.34), libelf1, libgcc-s1, passwd, polkitd, systemd, zlib1g" \
   "$temporary/control"
 grep -Fx "Conflicts: onyx" "$temporary/control"
 grep -Fq "/sys/fs/bpf/osmanthus" "$temporary/prerm"
@@ -139,6 +139,12 @@ test "$(grep -Fxc 'daemon-reload' "$systemctl_log")" -eq 1
 test -x "$temporary/usr/bin/osmanthus"
 test -x "$temporary/usr/bin/osmanthusd"
 test -x "$temporary/usr/bin/osmanthus-shell"
+test -x "$temporary/usr/libexec/osmanthus-polkit"
+test -s "$temporary/usr/share/polkit-1/rules.d/00-osmanthus.rules"
+grep -Fq 'org.freedesktop.systemd1.manage-units' \
+  "$temporary/usr/share/polkit-1/rules.d/00-osmanthus.rules"
+grep -Fq '/usr/libexec/osmanthus-polkit' \
+  "$temporary/usr/share/polkit-1/rules.d/00-osmanthus.rules"
 test -s "$temporary/lib/systemd/system/osmanthusd.service"
 ! grep -Fqx "PrivateTmp=yes" "$temporary/lib/systemd/system/osmanthusd.service"
 grep -Fqx "ReadWritePaths=/run/osmanthus /var/log/osmanthus /sys/fs/bpf /etc/osmanthus/admin" \
@@ -163,6 +169,8 @@ cmp -s ops/ssm/osmanthus-session.json \
 "$temporary/usr/bin/osmanthus" policy maintenance set --help | grep -F -- --maximum
 "$temporary/usr/bin/osmanthus" policy protect add --help | grep -F write
 "$temporary/usr/bin/osmanthus" policy auth --help | grep -F rotate
+"$temporary/usr/bin/osmanthus" policy service add --help | grep -F -- --action
+"$temporary/usr/bin/osmanthus" service --help | grep -F restart
 set +e
 "$temporary/usr/bin/osmanthus" check -- rm -rf /example >/dev/null 2>&1
 status=$?

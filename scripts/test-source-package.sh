@@ -47,6 +47,7 @@ for required in \
   examples/bpf-persistence-smoke.rs \
   examples/bpf-smoke.rs \
   ops/logrotate/osmanthus \
+  ops/polkit/00-osmanthus.rules \
   ops/ssm/osmanthus-session.json \
   ops/systemd/osmanthusd.service \
   packaging/deb/osmanthus.sources \
@@ -70,7 +71,9 @@ for required in \
   scripts/verify-apt-repository.sh \
   scripts/verify-rpm-repository.sh \
   src/bin/osmanthus-shell.rs \
+  src/bin/osmanthus-polkit.rs \
   src/bin/osmanthusd.rs \
+  src/systemd_control.rs \
   src/main.rs; do
   grep -Fx "$prefix/$required" "$listing" >/dev/null
 done

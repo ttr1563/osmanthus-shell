@@ -44,6 +44,7 @@ temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 rpm -qp --requires "$package" > "$temporary/requires"
 grep -Fxq 'shadow-utils' "$temporary/requires"
+grep -Fxq 'polkit' "$temporary/requires"
 grep -Fxq 'systemd' "$temporary/requires"
 install_root="$temporary/root"
 mkdir -p "$install_root/var/lib/rpm"
@@ -62,6 +63,12 @@ rpm --root "$install_root" --dbpath /var/lib/rpm --nodeps --noscripts -i "$packa
 test -x "$install_root/usr/bin/osmanthus"
 test -x "$install_root/usr/bin/osmanthusd"
 test -x "$install_root/usr/bin/osmanthus-shell"
+test -x "$install_root/usr/libexec/osmanthus-polkit"
+test -s "$install_root/usr/share/polkit-1/rules.d/00-osmanthus.rules"
+grep -Fq 'org.freedesktop.systemd1.manage-units' \
+  "$install_root/usr/share/polkit-1/rules.d/00-osmanthus.rules"
+grep -Fq '/usr/libexec/osmanthus-polkit' \
+  "$install_root/usr/share/polkit-1/rules.d/00-osmanthus.rules"
 test -s "$install_root/usr/lib/systemd/system/osmanthusd.service"
 ! grep -Fqx "PrivateTmp=yes" "$install_root/usr/lib/systemd/system/osmanthusd.service"
 grep -Fqx "ReadWritePaths=/run/osmanthus /var/log/osmanthus /sys/fs/bpf /etc/osmanthus/admin" \
@@ -86,6 +93,8 @@ cmp -s ops/ssm/osmanthus-session.json \
 "$install_root/usr/bin/osmanthus" policy maintenance set --help | grep -F -- "--maximum"
 "$install_root/usr/bin/osmanthus" policy protect add --help | grep -F "write"
 "$install_root/usr/bin/osmanthus" policy auth --help | grep -F "rotate"
+"$install_root/usr/bin/osmanthus" policy service add --help | grep -F -- "--action"
+"$install_root/usr/bin/osmanthus" service --help | grep -F "restart"
 "$install_root/usr/bin/osmanthus" check -- rm -rf /example >/dev/null 2>&1 && exit 1 || status=$?
 if [[ "$status" -ne 77 ]]; then
   echo "blocked command check returned unexpected status: $status" >&2
@@ -102,4 +111,6 @@ test -e "$install_root/etc/osmanthus/retention-marker"
 test ! -e "$install_root/usr/bin/osmanthus"
 test ! -e "$install_root/usr/bin/osmanthusd"
 test ! -e "$install_root/usr/bin/osmanthus-shell"
+test ! -e "$install_root/usr/libexec/osmanthus-polkit"
+test ! -e "$install_root/usr/share/polkit-1/rules.d/00-osmanthus.rules"
 test ! -e "$install_root/usr/share/osmanthus/ssm/osmanthus-session.json"

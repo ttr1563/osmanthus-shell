@@ -25,9 +25,11 @@ cargo build --release --locked
 sudo install -m0755 target/release/osmanthus /usr/bin/osmanthus
 sudo install -m0755 target/release/osmanthusd /usr/bin/osmanthusd
 sudo install -m0755 target/release/osmanthus-shell /usr/bin/osmanthus-shell
+sudo install -D -m0755 target/release/osmanthus-polkit /usr/libexec/osmanthus-polkit
 sudo install -m0644 ops/systemd/osmanthusd.service /usr/lib/systemd/system/osmanthusd.service
+sudo install -D -m0644 ops/polkit/00-osmanthus.rules /usr/share/polkit-1/rules.d/00-osmanthus.rules
 sudo install -m0644 ops/logrotate/osmanthus /etc/logrotate.d/osmanthus
-sudo install -D -m0644 ops/ssm/osmanthus-session.json /usr/share/osmanthus/ssm/osmanthus-session.json</code></pre><p>可変な開発branchは評価専用です。本番導入ではimmutableな署名済みrelease artifactを使用します。</p></section>
+sudo install -D -m0644 ops/ssm/osmanthus-session.json /usr/share/osmanthus/ssm/osmanthus-session.json</code></pre><p>名前指定したsystemd serviceの仲介にはPolkitが必要です。可変な開発branchは評価専用です。本番導入ではimmutableな署名済みrelease artifactを使用します。</p></section>
       <section><h2>local packageを生成</h2><pre><code>scripts/build-rpm.sh 0.1.3 dist/rpm
 scripts/build-deb.sh 0.1.3 dist/deb</code></pre><p>この操作はlocal artifactを作るだけで、repositoryへの公開や署名は行いません。deb builderはnative Linux x86-64で<code>amd64</code>、native Linux ARM64で<code>arm64</code>を生成し、cross packageは行いません。開発packageは公開v0.1.3と同じmanifest versionのため、公開物を上書きしたり同じreleaseとして配布してはいけません。versionはrelease時に決定します。</p><p>最初の候補は<code>v0.2.0-rc.1</code>を予定しています。RCは署名済みrelease artifactとして配布しますが、通常のAPT/DNF channelには入れません。<code>apt-get install osmanthus</code>と<code>dnf install osmanthus</code>は、clean hostでの導入・upgrade・rollback・repository署名受入を完了したstable版から案内します。</p><p>release engineeringの詳細は<a href="https://github.com/ttr1563/osmanthus-shell/blob/main/docs/osmanthus-apt-repository.md">APT runbook</a>と<a href="https://github.com/ttr1563/osmanthus-shell/blob/main/docs/osmanthus-rpm-repository.md">RPM runbook</a>を参照してください。</p></section>
       <section><h2>初期化と確認</h2><pre><code>sudo osmanthus policy init --account production-policy-admin
@@ -37,7 +39,8 @@ osmanthus daemon status
 
 sudo osmanthus policy protect add --path /srv/production \
   --action delete --action rename --action truncate
-sudo osmanthus policy monitor add 1001 --shell /bin/bash</code></pre><p>最初の境界testは使い捨てdirectoryで行い、login shell変更前にconsole・復旧経路を確保します。通常のfilesystem保護に<code>osmanthus run</code>は不要です。</p></section>
+sudo osmanthus policy service add --unit postgresql.service --action stop
+sudo osmanthus policy monitor add 1001 --shell /bin/bash</code></pre><p>最初の境界testは使い捨てdirectoryとserviceで行い、login shell変更前にconsole・復旧経路を確保します。通常のfilesystem保護に<code>osmanthus run</code>は不要です。保護serviceの意図した操作には<code>sudo osmanthus service start|stop|restart UNIT</code>を使用します。</p></section>
       <section><h2>認証器rotation</h2><p>現在のTOTP認証器を利用できる間に<code>sudo osmanthus policy auth rotate</code>を実行すると、新しいQR/URIを発行できます。旧secretは直ちに無効になります。登録済み認証器をすべて失った場合は、検証済みのroot専用backupから復元します。fileの直接編集は復旧手順にしません。</p></section>
       <section><h2>remote接続</h2><p>登録accountのOpenSSH・local loginは<code>osmanthus-shell</code>を通ります。AWS SSMはlogin shellを迂回できるため、repositoryの<a href="https://github.com/ttr1563/osmanthus-shell/blob/main/docs/ssm.md">専用Session document手順</a>を使用します。operatorがそのdocumentだけを開始でき、更新はできないようIAMを制限します。</p></section>
       <section><h2>移行・rollback・削除</h2><p>Osmanthusは従来Onyxのstateを自動importしません。導入前に<code>/usr/bin/onyx-shell</code>を使用するaccountを復元し、対応するOnyx binaryで<code>/sys/fs/bpf/onyx</code>をdecommissionしてください。旧kernel backendが残る間はOsmanthusの起動を拒否します。</p><p>同一ABIのBPF更新はreplacement linkとpin昇格を使います。非互換ABIは旧enforcementをattachしたまま拒否されるため、旧packageへrollbackするか、認証付きの保守・decommission・fresh attachを行います。</p><pre><code>sudo osmanthus policy monitor remove 1001

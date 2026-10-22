@@ -25,7 +25,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Linux command safety</p>
         <h1>A last line of defense for server commands.</h1>
-        <p class="lead">Osmanthus denies selected destructive filesystem operations below protected directories, records local evidence, and uses TOTP for scoped maintenance.</p>
+        <p class="lead">Osmanthus denies selected destructive filesystem operations and direct control of protected systemd services, records local evidence, and uses TOTP for intentional maintenance.</p>
         <div class="actions">
           <a class="primary" href="#quick-start">Quick start</a>
           <a class="secondary" href="./install.html">Install options</a>
@@ -88,6 +88,20 @@ sudo osmanthus maintenance grant \
 
 sudo osmanthus policy maintenance set \
   --default 15m --maximum 12h</code></pre>
+      </section>
+
+      <section class="content-grid">
+        <div>
+          <p class="eyebrow">Service control</p>
+          <h2>Require approval for selected runtime service operations.</h2>
+          <p>Register a canonical <code>.service</code> unit and protect direct start or stop-capable requests. Normal non-root <code>systemctl</code> and equivalent systemd D-Bus requests are denied; the explicit Osmanthus path requires root and the policy-administrator TOTP.</p>
+        </div>
+        <pre><code>sudo osmanthus policy service add \
+  --unit postgresql.service --action stop
+
+systemctl restart postgresql.service  # denied
+sudo osmanthus service restart postgresql.service</code></pre>
+        <p>Root can bypass this boundary. Unit-file operations such as enable, disable, and mask, and indirect dependency or isolate stops, are not protected.</p>
       </section>
 
       <section class="content-grid"><div><p class="eyebrow">Data boundary</p><h2>Protect integrity first. Treat access separately.</h2><p>Opt-in write protection can make release or credential directories immutable. Database reads, credentials, and outbound destinations require identity-aware read and network policies; they are a separate planned layer rather than command-name matching.</p></div><pre><code>sudo osmanthus maintenance pause \

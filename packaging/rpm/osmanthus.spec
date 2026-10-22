@@ -5,6 +5,7 @@ Summary:        Lightweight command guard for Linux servers
 License:        MIT
 URL:            https://github.com/ttr1563/osmanthus-shell
 Requires:       shadow-utils
+Requires:       polkit
 Requires:       systemd
 Conflicts:      onyx
 Source0:        osmanthus
@@ -17,13 +18,15 @@ Source6:        osmanthusd.service
 Source7:        osmanthus-shell
 Source8:        ssm.md
 Source9:        osmanthus-session.json
+Source10:       osmanthus-polkit
+Source11:       00-osmanthus.rules
 
 %global debug_package %{nil}
 
 %description
 Osmanthus uses a privileged daemon and Linux BPF LSM hooks to deny configured
-destructive filesystem operations below protected roots. Scoped maintenance
-leases require approval from an RFC 6238-compatible TOTP authenticator.
+destructive filesystem operations below protected roots. It also requires TOTP
+for selected direct systemd service operations and writes local JSONL evidence.
 
 %prep
 
@@ -33,6 +36,8 @@ leases require approval from an RFC 6238-compatible TOTP authenticator.
 install -Dpm0755 %{SOURCE0} %{buildroot}%{_bindir}/osmanthus
 install -Dpm0755 %{SOURCE5} %{buildroot}%{_bindir}/osmanthusd
 install -Dpm0755 %{SOURCE7} %{buildroot}%{_bindir}/osmanthus-shell
+install -Dpm0755 %{SOURCE10} %{buildroot}%{_libexecdir}/osmanthus-polkit
+install -Dpm0644 %{SOURCE11} %{buildroot}%{_datadir}/polkit-1/rules.d/00-osmanthus.rules
 install -Dpm0644 %{SOURCE1} %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dpm0644 %{SOURCE2} %{buildroot}%{_docdir}/%{name}/README.md
 install -Dpm0644 %{SOURCE3} %{buildroot}%{_docdir}/%{name}/operations.md
@@ -76,6 +81,8 @@ fi
 %{_bindir}/osmanthus
 %{_bindir}/osmanthusd
 %{_bindir}/osmanthus-shell
+%{_libexecdir}/osmanthus-polkit
+%{_datadir}/polkit-1/rules.d/00-osmanthus.rules
 %{_unitdir}/osmanthusd.service
 %license %{_licensedir}/%{name}/LICENSE
 %doc %{_docdir}/%{name}/README.md

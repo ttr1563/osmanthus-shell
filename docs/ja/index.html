@@ -25,7 +25,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Linux command safety</p>
         <h1>サーバー操作に、最後の防御線を。</h1>
-        <p class="lead">Osmanthusは指定階層の破壊的なファイル操作を遮断し、証跡をローカル保存し、範囲限定の保守解除にTOTPを要求します。</p>
+        <p class="lead">Osmanthusは指定階層の破壊的なファイル操作と保護対象systemd serviceの直接操作を遮断し、証跡をローカル保存し、意図した保守操作にTOTPを要求します。</p>
         <div class="actions">
           <a class="primary" href="#quick-start">クイックスタート</a>
           <a class="secondary" href="./install.html">導入方法</a>
@@ -88,6 +88,20 @@ sudo osmanthus maintenance grant \
 
 sudo osmanthus policy maintenance set \
   --default 15m --maximum 12h</code></pre>
+      </section>
+
+      <section class="content-grid">
+        <div>
+          <p class="eyebrow">Service control</p>
+          <h2>指定serviceの実行時操作に承認を要求。</h2>
+          <p>canonicalな<code>.service</code> unitを登録し、直接のstartまたは停止を伴う操作を保護します。通常の非root <code>systemctl</code>と同等のsystemd D-Bus requestは拒否し、明示的なOsmanthus経路ではroot権限とpolicy管理者TOTPを要求します。</p>
+        </div>
+        <pre><code>sudo osmanthus policy service add \
+  --unit postgresql.service --action stop
+
+systemctl restart postgresql.service  # 拒否
+sudo osmanthus service restart postgresql.service</code></pre>
+        <p>rootはこの境界を迂回できます。enable・disable・mask等のunit-file操作、依存関係やisolateによる間接停止は保護対象外です。</p>
       </section>
 
       <section class="content-grid"><div><p class="eyebrow">データ境界</p><h2>まず完全性を守り、アクセス制御は分離する。</h2><p>opt-inのwrite保護でreleaseやcredential directoryを不変にできます。DB読取り、認証情報、外向き通信先はidentityを考慮したread・network policyが必要なため、コマンド名判定とは分けた次段階として設計します。</p></div><pre><code>sudo osmanthus maintenance pause \

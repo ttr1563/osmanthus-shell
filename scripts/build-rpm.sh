@@ -60,6 +60,8 @@ cargo build --release --locked
 install -m0755 "$target_dir/release/osmanthus" "$topdir/SOURCES/osmanthus"
 install -m0755 "$target_dir/release/osmanthusd" "$topdir/SOURCES/osmanthusd"
 install -m0755 "$target_dir/release/osmanthus-shell" "$topdir/SOURCES/osmanthus-shell"
+install -m0755 "$target_dir/release/osmanthus-polkit" "$topdir/SOURCES/osmanthus-polkit"
+install -m0644 ops/polkit/00-osmanthus.rules "$topdir/SOURCES/00-osmanthus.rules"
 install -m0644 LICENSE "$topdir/SOURCES/LICENSE"
 install -m0644 README.md "$topdir/SOURCES/README.md"
 install -m0644 docs/operations.md "$topdir/SOURCES/operations.md"

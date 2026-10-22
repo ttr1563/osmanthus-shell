@@ -8,7 +8,7 @@ release procedure until every gate in the README is closed.
 - Native Linux x86-64 or ARM64 with BTF, BPF LSM enabled and active, and the
   `bpf_loop` helper. Each architecture must pass its own package integration
   gate before release.
-- systemd and a mounted bpffs at `/sys/fs/bpf`.
+- systemd, Polkit, and a mounted bpffs at `/sys/fs/bpf`.
 - root access for installation and policy changes.
 - a separate RFC 6238 authenticator controlled by the policy administrator.
 - a tested console/recovery path before changing any login entry point.
@@ -268,6 +268,13 @@ before promoting it. Startup repairs an interrupted promotion. Package upgrade
 restarts an already-active daemon, which performs this blue-green replacement.
 On Debian-family hosts, installing a rollback package also starts an enabled unit
 left inactive or failed by the rejected upgrade; a disabled unit remains stopped.
+
+The service-control helper and daemon use one versioned local protocol. During an
+upgrade or rollback that changes this protocol, a mismatched helper and daemon
+deny mediated service requests until the package transaction restarts the daemon.
+If that restart fails, keep the package transaction failed, restore the matching
+package, and verify protected and unrelated service behavior before resuming
+operator access. Do not remove the Polkit rule as a recovery shortcut.
 
 The daemon checks the pinned BPF ABI before program replacement. If it reports an
 incompatible ABI, the old links remain attached. Do not remove individual pins.
