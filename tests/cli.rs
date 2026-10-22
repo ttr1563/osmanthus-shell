@@ -6,26 +6,72 @@ use std::process::Command;
 use std::sync::{Arc, Barrier};
 
 use assert_cmd::prelude::*;
-use onyx_guard::auth;
-use onyx_guard::config::{self, Config};
-use onyx_guard::policy::{CustomRule, PolicyFile, RiskLevel};
-use onyx_guard::state::{self, EventStatus, GuardEvent};
+use osmanthus_guard::auth;
+use osmanthus_guard::config::{self, Config};
+use osmanthus_guard::policy::{CustomRule, PolicyFile, RiskLevel};
+use osmanthus_guard::state::{self, EventStatus, GuardEvent};
 use predicates::prelude::*;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-fn onyx(state: &Path) -> Command {
-    let mut command = Command::cargo_bin("onyx").unwrap();
+fn osmanthus(state: &Path) -> Command {
+    let mut command = Command::cargo_bin("osmanthus").unwrap();
     command.arg("--state-dir").arg(state);
     command
 }
 
 fn initialize(root: &Path) {
-    onyx(root)
+    osmanthus(root)
         .args(["init", "--no-qr", "--account", "test-server"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Onyx initialized"));
+        .stdout(predicate::str::contains(
+            "Legacy explicit-wrapper state initialized",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility commands require: osmanthus run -- <command>",
+        ))
+        .stdout(predicate::str::contains(
+            "Linux protected-root enforcement uses: sudo osmanthus policy init",
+        ));
+}
+
+#[test]
+fn top_level_help_marks_init_as_compatibility_mode() {
+    let temp = TempDir::new().unwrap();
+    osmanthus(temp.path())
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Initialize the legacy explicit-wrapper compatibility mode",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility wrapper: evaluate and, when permitted, execute a command",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility diagnostic: evaluate without creating an event or executing",
+        ));
+}
+
+#[test]
+fn service_control_help_exposes_policy_and_authenticated_runtime_paths() {
+    let temp = TempDir::new().unwrap();
+    osmanthus(temp.path())
+        .args(["service", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("start"))
+        .stdout(predicate::str::contains("stop"))
+        .stdout(predicate::str::contains("restart"));
+    osmanthus(temp.path())
+        .args(["policy", "service", "add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--unit"))
+        .stdout(predicate::str::contains("--action"))
+        .stdout(predicate::str::contains("start"))
+        .stdout(predicate::str::contains("stop"));
 }
 
 #[test]
@@ -46,7 +92,7 @@ fn init_creates_private_state_and_status() {
     let stored = config::load_config(&root).unwrap();
     let audit = fs::read_to_string(root.join(config::AUDIT_FILE)).unwrap();
     assert!(!audit.contains(&stored.totp_secret_base32));
-    onyx(&root)
+    osmanthus(&root)
         .arg("status")
         .assert()
         .success()
@@ -59,11 +105,11 @@ fn init_creates_private_state_and_status() {
 fn init_prints_a_compact_enrollment_qr() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
-    let output = onyx(&root)
+    let output = osmanthus(&root)
         .args([
             "init",
             "--issuer",
-            "Onyx",
+            "Osmanthus",
             "--account",
             "ttr1563-production-deploy",
         ])
@@ -95,7 +141,7 @@ fn safe_command_runs_and_preserves_exit_status() {
     fs::write(&safe_command, "#!/bin/sh\nexit 7\n").unwrap();
     fs::set_permissions(&safe_command, fs::Permissions::from_mode(0o755)).unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .arg(&safe_command)
@@ -121,28 +167,28 @@ fn dangerous_command_requires_and_consumes_one_permit() {
         OsString::from("/protected/path"),
     ];
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .args(&command)
         .assert()
         .code(77)
-        .stderr(predicate::str::contains("BLOCKED by Onyx"));
+        .stderr(predicate::str::contains("BLOCKED by Osmanthus"));
 
     let event = state::list_events(&root).unwrap().remove(0);
     assert_eq!(event.status, EventStatus::Pending);
     let config = config::load_config(&root).unwrap();
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let code = onyx_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
+    let code = osmanthus_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
     auth::approve_with_code(&root, &config, &event.id, &code, now).unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .args(&command)
         .assert()
         .success();
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .args(&command)
@@ -154,10 +200,10 @@ fn dangerous_command_requires_and_consumes_one_permit() {
 fn totp_code_cannot_approve_two_events() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
-    let config = Config::new("Onyx".to_owned(), "test".to_owned()).unwrap();
+    let config = Config::new("Osmanthus".to_owned(), "test".to_owned()).unwrap();
     config::initialize(&root, &config).unwrap();
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let findings = onyx_guard::policy::evaluate(&[
+    let findings = osmanthus_guard::policy::evaluate(&[
         OsString::from("rm"),
         OsString::from("-rf"),
         OsString::from("/one"),
@@ -166,12 +212,12 @@ fn totp_code_cannot_approve_two_events() {
     let second = GuardEvent::new(now, 600, "2".repeat(64), vec!["rm".to_owned()], &findings);
     state::save_event(&root, &first).unwrap();
     state::save_event(&root, &second).unwrap();
-    let code = onyx_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
+    let code = osmanthus_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
 
     auth::approve_with_code(&root, &config, &first.id, &code, now).unwrap();
     assert!(matches!(
         auth::approve_with_code(&root, &config, &second.id, &code, now),
-        Err(onyx_guard::OnyxError::InvalidCode)
+        Err(osmanthus_guard::OsmanthusError::InvalidCode)
     ));
 }
 
@@ -179,10 +225,10 @@ fn totp_code_cannot_approve_two_events() {
 fn concurrent_totp_approvals_allow_only_one_event() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
-    let config = Config::new("Onyx".to_owned(), "test".to_owned()).unwrap();
+    let config = Config::new("Osmanthus".to_owned(), "test".to_owned()).unwrap();
     config::initialize(&root, &config).unwrap();
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let findings = onyx_guard::policy::evaluate(&[
+    let findings = osmanthus_guard::policy::evaluate(&[
         OsString::from("rm"),
         OsString::from("-rf"),
         OsString::from("/one"),
@@ -194,7 +240,7 @@ fn concurrent_totp_approvals_allow_only_one_event() {
     for event in &events {
         state::save_event(&root, event).unwrap();
     }
-    let code = onyx_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
+    let code = osmanthus_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
     let barrier = Arc::new(Barrier::new(2));
     let workers: Vec<_> = events
         .iter()
@@ -219,7 +265,7 @@ fn concurrent_totp_approvals_allow_only_one_event() {
     assert_eq!(
         outcomes
             .iter()
-            .filter(|result| matches!(result, Err(onyx_guard::OnyxError::InvalidCode)))
+            .filter(|result| matches!(result, Err(osmanthus_guard::OsmanthusError::InvalidCode)))
             .count(),
         1
     );
@@ -234,7 +280,7 @@ fn refuses_symlinked_config() {
     fs::rename(root.join(config::CONFIG_FILE), &original).unwrap();
     std::os::unix::fs::symlink(&original, root.join(config::CONFIG_FILE)).unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("status")
         .assert()
         .failure()
@@ -251,7 +297,7 @@ fn refuses_non_regular_and_oversized_state_files() {
     fs::rename(&config_path, &original).unwrap();
     fs::create_dir(&config_path).unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("status")
         .assert()
         .failure()
@@ -260,7 +306,7 @@ fn refuses_non_regular_and_oversized_state_files() {
     fs::remove_dir(&config_path).unwrap();
     fs::write(&config_path, vec![b' '; 1_048_577]).unwrap();
     fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
-    onyx(&root)
+    osmanthus(&root)
         .arg("status")
         .assert()
         .failure()
@@ -275,7 +321,7 @@ fn refuses_symlinked_state_root() {
     let linked_root = temp.path().join("linked-state");
     std::os::unix::fs::symlink(&real_root, &linked_root).unwrap();
 
-    onyx(&linked_root)
+    osmanthus(&linked_root)
         .arg("status")
         .assert()
         .failure()
@@ -286,10 +332,10 @@ fn refuses_symlinked_state_root() {
 fn five_invalid_codes_trigger_temporary_lock() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
-    let config = Config::new("Onyx".to_owned(), "test".to_owned()).unwrap();
+    let config = Config::new("Osmanthus".to_owned(), "test".to_owned()).unwrap();
     config::initialize(&root, &config).unwrap();
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let findings = onyx_guard::policy::evaluate(&[
+    let findings = osmanthus_guard::policy::evaluate(&[
         OsString::from("rm"),
         OsString::from("-rf"),
         OsString::from("/one"),
@@ -300,12 +346,12 @@ fn five_invalid_codes_trigger_temporary_lock() {
     for _ in 0..5 {
         assert!(matches!(
             auth::approve_with_code(&root, &config, &event.id, "not-a-code", now),
-            Err(onyx_guard::OnyxError::InvalidCode)
+            Err(osmanthus_guard::OsmanthusError::InvalidCode)
         ));
     }
     assert!(matches!(
         auth::approve_with_code(&root, &config, &event.id, "not-a-code", now),
-        Err(onyx_guard::OnyxError::AuthenticationLocked(_))
+        Err(osmanthus_guard::OsmanthusError::AuthenticationLocked(_))
     ));
 }
 
@@ -315,7 +361,7 @@ fn event_and_audit_redact_secret_arguments() {
     let root = temp.path().join("state");
     initialize(&root);
 
-    onyx(&root)
+    osmanthus(&root)
         .args([
             "run",
             "--",
@@ -335,14 +381,14 @@ fn event_and_audit_redact_secret_arguments() {
 fn concurrent_audit_records_remain_valid_json_lines() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");
-    let config = Config::new("Onyx".to_owned(), "test".to_owned()).unwrap();
+    let config = Config::new("Osmanthus".to_owned(), "test".to_owned()).unwrap();
     config::initialize(&root, &config).unwrap();
     let mut workers = Vec::new();
     for _ in 0..8 {
         let root = root.clone();
         workers.push(std::thread::spawn(move || {
-            let record = onyx_guard::audit::AuditRecord::new("concurrent").unwrap();
-            onyx_guard::audit::append(&root, &record).unwrap();
+            let record = osmanthus_guard::audit::AuditRecord::new("concurrent").unwrap();
+            osmanthus_guard::audit::append(&root, &record).unwrap();
         }));
     }
     for worker in workers {
@@ -375,18 +421,18 @@ fn legacy_user_policy_remains_enforced_until_system_policy_is_initialized() {
         .unwrap();
     policy.save(&root).unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .args(["policy", "list"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Policy source: legacy user"))
         .stdout(predicate::str::contains("production-terraform"));
-    onyx(&root)
+    osmanthus(&root)
         .args(["check", "--", "terraform", "apply", "production.tfplan"])
         .assert()
         .code(77)
         .stdout(predicate::str::contains("production-terraform"));
-    onyx(&root)
+    osmanthus(&root)
         .args(["check", "--", "terraform", "plan", "production.tfplan"])
         .assert()
         .success();
@@ -411,7 +457,7 @@ fn audit_write_failure_prevents_safe_command_execution() {
     )
     .unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .arg(&safe_command)
@@ -432,7 +478,7 @@ fn failed_spawn_does_not_leave_reusable_permit() {
         OsString::from("/protected/path"),
     ];
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .args(&command)
@@ -441,10 +487,10 @@ fn failed_spawn_does_not_leave_reusable_permit() {
     let event = state::list_events(&root).unwrap().remove(0);
     let config = config::load_config(&root).unwrap();
     let now = OffsetDateTime::now_utc().unix_timestamp();
-    let code = onyx_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
+    let code = osmanthus_guard::totp::code_at(&config.totp_secret_base32, now).unwrap();
     auth::approve_with_code(&root, &config, &event.id, &code, now).unwrap();
 
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .args(&command)
@@ -455,7 +501,7 @@ fn failed_spawn_does_not_leave_reusable_permit() {
         state::load_event(&root, &event.id).unwrap().status,
         EventStatus::Consumed
     );
-    onyx(&root)
+    osmanthus(&root)
         .arg("run")
         .arg("--")
         .args(&command)
