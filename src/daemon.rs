@@ -9,7 +9,10 @@ use serde::Serialize;
 use zeroize::Zeroizing;
 
 use crate::config;
-use crate::enforcement::{EnforcementEngine, EnforcementPolicy, MaintenanceLease};
+use crate::enforcement::{
+    EnforcementEngine, EnforcementPolicy, MaintenanceLease, OSMANTHUSD_SERVICE, ServiceAction,
+    ServiceControlOperation,
+};
 use crate::protocol::{
     BackendState, PROTOCOL_VERSION, Request, RequestBody, Response, ResponseBody,
 };
@@ -38,6 +41,7 @@ pub trait EnforcementBackend {
     fn grant_maintenance(&mut self, lease: &MaintenanceLease, now_unix: i64) -> Result<()>;
     fn revoke_maintenance(&mut self, lease: &MaintenanceLease) -> Result<()>;
     fn replace_policy(&mut self, policy: &EnforcementPolicy) -> Result<()>;
+    fn control_service(&mut self, unit: &str, operation: ServiceControlOperation) -> Result<()>;
     fn decommission(&mut self) -> Result<()>;
 }
 
@@ -57,6 +61,10 @@ impl EnforcementBackend for StateBackend {
     }
 
     fn replace_policy(&mut self, _policy: &EnforcementPolicy) -> Result<()> {
+        Ok(())
+    }
+
+    fn control_service(&mut self, _unit: &str, _operation: ServiceControlOperation) -> Result<()> {
         Ok(())
     }
 
@@ -403,6 +411,98 @@ impl<A: AdministratorAuthenticator, L: DaemonAuditSink, B: EnforcementBackend> D
                 }
                 ResponseBody::PolicyReloaded
             }
+            RequestBody::ServiceControl {
+                unit,
+                operation,
+                authenticator_code,
+            } => {
+                require_root_peer(peer_uid)?;
+                if unit == OSMANTHUSD_SERVICE {
+                    return Err(OsmanthusError::InvalidState(
+                        "use `sudo osmanthus daemon decommission` before stopping osmanthusd.service"
+                            .to_owned(),
+                    ));
+                }
+                if !self.engine.protects_service_operation(&unit, operation) {
+                    return Err(OsmanthusError::InvalidState(format!(
+                        "service operation is not protected by policy: {} {}",
+                        operation.systemctl_verb(),
+                        unit
+                    )));
+                }
+                let code = Zeroizing::new(authenticator_code);
+                self.authenticator.verify(&code, now_unix)?;
+                self.audit.append(&DaemonAuditRecord {
+                    schema_version: 1,
+                    timestamp_unix: now_unix,
+                    action: "service_control_authorized",
+                    peer_uid,
+                    peer_cgroup_id: Some(peer_cgroup_id),
+                    session_id: None,
+                    target: Some(unit.clone()),
+                    operation: Some(operation.systemctl_verb().to_owned()),
+                    decision: Some("authorized".to_owned()),
+                    lease_id: None,
+                })?;
+                if let Err(error) = self.backend.control_service(&unit, operation) {
+                    self.audit.append(&DaemonAuditRecord {
+                        schema_version: 1,
+                        timestamp_unix: now_unix,
+                        action: "service_control_failed",
+                        peer_uid,
+                        peer_cgroup_id: Some(peer_cgroup_id),
+                        session_id: None,
+                        target: Some(unit),
+                        operation: Some(operation.systemctl_verb().to_owned()),
+                        decision: Some("failed".to_owned()),
+                        lease_id: None,
+                    })?;
+                    return Err(error);
+                }
+                self.audit.append(&DaemonAuditRecord {
+                    schema_version: 1,
+                    timestamp_unix: now_unix,
+                    action: "service_control_requested",
+                    peer_uid,
+                    peer_cgroup_id: Some(peer_cgroup_id),
+                    session_id: None,
+                    target: Some(unit),
+                    operation: Some(operation.systemctl_verb().to_owned()),
+                    decision: Some("accepted".to_owned()),
+                    lease_id: None,
+                })?;
+                ResponseBody::ServiceControlRequested
+            }
+            RequestBody::ServiceControlDecision {
+                unit,
+                operation,
+                subject_uid,
+                subject_pid,
+            } => {
+                require_root_peer(peer_uid)?;
+                let self_stop = unit == OSMANTHUSD_SERVICE
+                    && operation.actions().contains(&ServiceAction::Stop);
+                if !self_stop && !self.engine.protects_service_operation(&unit, operation) {
+                    return Ok(Response {
+                        protocol_version: PROTOCOL_VERSION,
+                        request_id,
+                        body: ResponseBody::ServiceControlAllowed,
+                    });
+                }
+                self.audit.append(&DaemonAuditRecord {
+                    schema_version: 1,
+                    timestamp_unix: now_unix,
+                    action: "service_control_blocked",
+                    peer_uid: subject_uid,
+                    peer_cgroup_id: None,
+                    session_id: Some(format!("process.{subject_pid}")),
+                    target: Some(unit),
+                    operation: Some(operation.systemctl_verb().to_owned()),
+                    decision: Some("blocked".to_owned()),
+                    lease_id: None,
+                })?;
+                ResponseBody::ServiceControlDenialRecorded
+            }
             RequestBody::SessionStart { session_id, shell } => {
                 if !self.engine.monitors_uid(peer_uid) {
                     return Err(OsmanthusError::InvalidState(format!(
@@ -595,8 +695,8 @@ mod tests {
 
     use super::*;
     use crate::enforcement::{
-        DEFAULT_MAX_MAINTENANCE_SECONDS, EnforcementDecision, ProtectedAction, ProtectedRoot,
-        ResourceOperation,
+        DEFAULT_MAX_MAINTENANCE_SECONDS, EnforcementDecision, MaintenanceSettings, ProtectedAction,
+        ProtectedRoot, ProtectedService, ResourceOperation, ServiceAction,
     };
     use crate::protocol::RequestBody;
 
@@ -638,7 +738,7 @@ mod tests {
     }
 
     fn core() -> DaemonCore<FakeAuthenticator, MemoryAudit> {
-        let policy = EnforcementPolicy::from_parts(
+        let policy = EnforcementPolicy::from_parts_with_services_and_maintenance(
             vec![
                 ProtectedRoot::new(
                     "/var/www",
@@ -646,7 +746,15 @@ mod tests {
                 )
                 .unwrap(),
             ],
+            vec![
+                ProtectedService::new(
+                    "postgresql.service",
+                    [ServiceAction::Stop].into_iter().collect(),
+                )
+                .unwrap(),
+            ],
             BTreeSet::from([1000]),
+            MaintenanceSettings::default(),
         )
         .unwrap();
         DaemonCore::new(
@@ -712,6 +820,122 @@ mod tests {
             ),
             Err(OsmanthusError::InvalidCode)
         ));
+    }
+
+    #[test]
+    fn protected_service_control_requires_root_authentication_and_audit() {
+        let request = |code: &str| {
+            request(
+                "service-stop-1",
+                RequestBody::ServiceControl {
+                    unit: "postgresql.service".to_owned(),
+                    operation: ServiceControlOperation::Stop,
+                    authenticator_code: code.to_owned(),
+                },
+            )
+        };
+        assert!(matches!(
+            core().handle(1000, request("123456"), 100),
+            Err(OsmanthusError::RootRequired)
+        ));
+        assert!(matches!(
+            core().handle(0, request("000000"), 100),
+            Err(OsmanthusError::InvalidCode)
+        ));
+
+        let mut failed_audit = core();
+        failed_audit.audit.fail = true;
+        assert!(failed_audit.handle(0, request("123456"), 100).is_err());
+
+        let mut valid = core();
+        let response = valid.handle(0, request("123456"), 100).unwrap();
+        assert!(matches!(
+            response.body,
+            ResponseBody::ServiceControlRequested
+        ));
+        assert_eq!(
+            valid
+                .audit
+                .records
+                .iter()
+                .map(|record| record.action)
+                .collect::<Vec<_>>(),
+            ["service_control_authorized", "service_control_requested"]
+        );
+    }
+
+    #[test]
+    fn unprotected_service_control_is_not_authorized() {
+        let mut core = core();
+        assert!(matches!(
+            core.handle(
+                0,
+                request(
+                    "service-stop-unprotected",
+                    RequestBody::ServiceControl {
+                        unit: "nginx.service".to_owned(),
+                        operation: ServiceControlOperation::Stop,
+                        authenticator_code: "123456".to_owned(),
+                    },
+                ),
+                100,
+            ),
+            Err(OsmanthusError::InvalidState(message)) if message.contains("not protected")
+        ));
+        assert_eq!(core.authenticator.calls, 0);
+        assert!(core.audit.records.is_empty());
+    }
+
+    #[test]
+    fn root_polkit_helper_records_a_protected_denial_for_the_subject() {
+        let denied = || {
+            request(
+                "service-denied-1",
+                RequestBody::ServiceControlDecision {
+                    unit: "postgresql.service".to_owned(),
+                    operation: ServiceControlOperation::Restart,
+                    subject_uid: 1000,
+                    subject_pid: 4321,
+                },
+            )
+        };
+        assert!(matches!(
+            core().handle(1000, denied(), 100),
+            Err(OsmanthusError::RootRequired)
+        ));
+        let mut core = core();
+        let response = core.handle(0, denied(), 100).unwrap();
+        assert!(matches!(
+            response.body,
+            ResponseBody::ServiceControlDenialRecorded
+        ));
+        let record = core.audit.records.last().unwrap();
+        assert_eq!(record.action, "service_control_blocked");
+        assert_eq!(record.peer_uid, 1000);
+        assert_eq!(record.target.as_deref(), Some("postgresql.service"));
+        assert_eq!(record.operation.as_deref(), Some("restart"));
+    }
+
+    #[test]
+    fn root_polkit_helper_passes_an_unprotected_service_without_audit() {
+        let mut core = core();
+        let response = core
+            .handle(
+                0,
+                request(
+                    "service-allowed-1",
+                    RequestBody::ServiceControlDecision {
+                        unit: "nginx.service".to_owned(),
+                        operation: ServiceControlOperation::Stop,
+                        subject_uid: 1000,
+                        subject_pid: 4321,
+                    },
+                ),
+                100,
+            )
+            .unwrap();
+        assert!(matches!(response.body, ResponseBody::ServiceControlAllowed));
+        assert!(core.audit.records.is_empty());
     }
 
     #[test]

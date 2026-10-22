@@ -89,8 +89,9 @@ pub fn run() -> Result<()> {
     system_policy::require_root()?;
     let _lock = acquire_process_lock()?;
     let policy_file = system_policy::load()?.ok_or(OsmanthusError::SystemPolicyNotInitialized)?;
-    let policy = EnforcementPolicy::from_parts_with_maintenance(
+    let policy = EnforcementPolicy::from_parts_with_services_and_maintenance(
         policy_file.protected_roots,
+        policy_file.protected_services,
         policy_file.monitored_uids,
         policy_file.maintenance,
     )?;

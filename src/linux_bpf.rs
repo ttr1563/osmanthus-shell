@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::{Link, MapCore, MapFlags, MapHandle, OpenObject};
 
-use crate::enforcement::{EnforcementPolicy, MaintenanceLease, ProtectedAction, ProtectedRoot};
+use crate::enforcement::{
+    EnforcementPolicy, MaintenanceLease, ProtectedAction, ProtectedRoot, ServiceControlOperation,
+};
 use crate::protocol::BackendState;
 use crate::{OsmanthusError, Result};
 
@@ -29,6 +31,12 @@ impl crate::daemon::EnforcementBackend for LinuxBpfSession<'_> {
 
     fn replace_policy(&mut self, policy: &EnforcementPolicy) -> Result<()> {
         LinuxBpfSession::replace_policy(self, policy)
+    }
+
+    fn control_service(&mut self, _unit: &str, _operation: ServiceControlOperation) -> Result<()> {
+        Err(OsmanthusError::InvalidState(
+            "transient BPF sessions cannot control systemd services".to_owned(),
+        ))
     }
 
     fn decommission(&mut self) -> Result<()> {
@@ -442,6 +450,10 @@ impl crate::daemon::EnforcementBackend for PersistentLinuxBpfBackend {
 
     fn replace_policy(&mut self, policy: &EnforcementPolicy) -> Result<()> {
         PersistentLinuxBpfBackend::replace_policy(self, policy)
+    }
+
+    fn control_service(&mut self, unit: &str, operation: ServiceControlOperation) -> Result<()> {
+        crate::systemd_control::request(unit, operation)
     }
 
     fn decommission(&mut self) -> Result<()> {

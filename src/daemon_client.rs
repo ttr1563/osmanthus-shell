@@ -41,9 +41,9 @@ pub fn request(body: RequestBody) -> Result<ResponseBody> {
 
 fn response_timeout(body: &RequestBody) -> Duration {
     match body {
-        RequestBody::PolicyReload { .. } | RequestBody::Decommission { .. } => {
-            ADMIN_RESPONSE_TIMEOUT
-        }
+        RequestBody::PolicyReload { .. }
+        | RequestBody::Decommission { .. }
+        | RequestBody::ServiceControl { .. } => ADMIN_RESPONSE_TIMEOUT,
         _ => DAEMON_IO_TIMEOUT,
     }
 }

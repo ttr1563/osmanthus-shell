@@ -2,10 +2,13 @@ use std::io::{BufRead, Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::enforcement::{MaintenanceLease, ProtectedAction, ResourceOperation};
+use crate::enforcement::{
+    MaintenanceLease, ProtectedAction, ResourceOperation, ServiceControlOperation,
+    validate_systemd_service_name,
+};
 use crate::{OsmanthusError, Result};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_FRAME_BYTES: usize = 65_536;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +44,28 @@ impl Request {
                 validate_authenticator_code(authenticator_code)
             }
             RequestBody::PolicyReload { policy } => policy.validate(),
+            RequestBody::ServiceControl {
+                unit,
+                authenticator_code,
+                ..
+            } => {
+                validate_systemd_service_name(unit)?;
+                validate_authenticator_code(authenticator_code)
+            }
+            RequestBody::ServiceControlDecision {
+                unit,
+                subject_uid,
+                subject_pid,
+                ..
+            } => {
+                validate_systemd_service_name(unit)?;
+                if *subject_uid == 0 || *subject_pid == 0 {
+                    return Err(OsmanthusError::InvalidState(
+                        "service-control subject UID and PID must be nonzero".to_owned(),
+                    ));
+                }
+                Ok(())
+            }
             RequestBody::SessionStart { session_id, shell } => {
                 validate_session_id(session_id)?;
                 if shell.is_empty()
@@ -138,6 +163,17 @@ pub enum RequestBody {
     PolicyReload {
         policy: crate::enforcement::EnforcementPolicy,
     },
+    ServiceControl {
+        unit: String,
+        operation: ServiceControlOperation,
+        authenticator_code: String,
+    },
+    ServiceControlDecision {
+        unit: String,
+        operation: ServiceControlOperation,
+        subject_uid: u32,
+        subject_pid: u32,
+    },
     SessionStart {
         session_id: String,
         shell: String,
@@ -184,6 +220,9 @@ pub enum ResponseBody {
         leases: Vec<MaintenanceLease>,
     },
     PolicyReloaded,
+    ServiceControlRequested,
+    ServiceControlAllowed,
+    ServiceControlDenialRecorded,
     Decommissioned,
     SessionAccepted,
     SessionDataRecorded,
@@ -389,5 +428,45 @@ mod tests {
             decommission.validate(),
             Err(OsmanthusError::InvalidCode)
         ));
+    }
+
+    #[test]
+    fn service_control_requests_validate_unit_code_and_subject() {
+        let invalid_unit = Request {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "service-1".to_owned(),
+            body: RequestBody::ServiceControl {
+                unit: "../postgresql.service".to_owned(),
+                operation: ServiceControlOperation::Stop,
+                authenticator_code: "123456".to_owned(),
+            },
+        };
+        assert!(invalid_unit.validate().is_err());
+
+        let invalid_code = Request {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "service-2".to_owned(),
+            body: RequestBody::ServiceControl {
+                unit: "postgresql.service".to_owned(),
+                operation: ServiceControlOperation::Stop,
+                authenticator_code: "abcdef".to_owned(),
+            },
+        };
+        assert!(matches!(
+            invalid_code.validate(),
+            Err(OsmanthusError::InvalidCode)
+        ));
+
+        let invalid_subject = Request {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "service-3".to_owned(),
+            body: RequestBody::ServiceControlDecision {
+                unit: "postgresql.service".to_owned(),
+                operation: ServiceControlOperation::Stop,
+                subject_uid: 0,
+                subject_pid: 1,
+            },
+        };
+        assert!(invalid_subject.validate().is_err());
     }
 }

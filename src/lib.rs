@@ -16,6 +16,8 @@ pub mod policy;
 pub mod protocol;
 pub mod state;
 pub mod system_policy;
+#[cfg(target_os = "linux")]
+pub mod systemd_control;
 pub mod totp;
 
 pub use error::{OsmanthusError, Result};
