@@ -11,7 +11,8 @@ use osmanthus_guard::audit::{self, AuditRecord};
 use osmanthus_guard::auth;
 use osmanthus_guard::config::{self, Config};
 use osmanthus_guard::enforcement::{
-    MAX_MAINTENANCE_SECONDS, MaintenanceSettings, ProtectedAction, ProtectedRoot, ResourceOperation,
+    MAX_MAINTENANCE_SECONDS, MaintenanceSettings, ProtectedAction, ProtectedRoot, ProtectedService,
+    ResourceOperation, ServiceAction, ServiceControlOperation,
 };
 use osmanthus_guard::login_shell;
 use osmanthus_guard::policy;
@@ -78,6 +79,11 @@ enum Commands {
         #[command(subcommand)]
         command: MaintenanceCommands,
     },
+    /// Request an authenticated operation for a protected systemd service.
+    Service {
+        #[command(subcommand)]
+        command: ServiceCommands,
+    },
     /// Inspect the privileged enforcement daemon.
     Daemon {
         #[command(subcommand)]
@@ -118,6 +124,16 @@ enum MaintenanceCommands {
 }
 
 #[derive(Debug, Subcommand)]
+enum ServiceCommands {
+    /// Start a protected service after administrator authentication.
+    Start { unit: String },
+    /// Stop a protected service after administrator authentication.
+    Stop { unit: String },
+    /// Restart a protected service after administrator authentication.
+    Restart { unit: String },
+}
+
+#[derive(Debug, Subcommand)]
 enum PolicyCommands {
     /// Initialize root-owned system policy and its administrator authenticator.
     Init {
@@ -153,6 +169,11 @@ enum PolicyCommands {
     Protect {
         #[command(subcommand)]
         command: ProtectCommands,
+    },
+    /// Manage protected systemd services and runtime operations.
+    Service {
+        #[command(subcommand)]
+        command: PolicyServiceCommands,
     },
     /// Manage operating-system identities whose process executions are logged.
     Monitor {
@@ -211,6 +232,22 @@ enum ProtectCommands {
 }
 
 #[derive(Debug, Subcommand)]
+enum PolicyServiceCommands {
+    /// Add one canonical systemd service after administrator authentication.
+    Add {
+        #[arg(long)]
+        unit: String,
+        #[arg(long = "action", value_enum, required = true)]
+        actions: Vec<CliServiceAction>,
+    },
+    /// Remove one protected systemd service after administrator authentication.
+    Remove {
+        #[arg(long)]
+        unit: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum MonitorCommands {
     /// Add one numeric operating-system user ID to automatic exec monitoring.
     Add {
@@ -236,6 +273,21 @@ enum CliProtectedAction {
     Truncate,
     Write,
     ChangePermissions,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliServiceAction {
+    Start,
+    Stop,
+}
+
+impl From<CliServiceAction> for ServiceAction {
+    fn from(value: CliServiceAction) -> Self {
+        match value {
+            CliServiceAction::Start => Self::Start,
+            CliServiceAction::Stop => Self::Stop,
+        }
+    }
 }
 
 impl From<CliProtectedAction> for ProtectedAction {
@@ -288,7 +340,33 @@ fn run_cli(cli: Cli) -> Result<u8> {
         Commands::Logs { limit } => logs(&root, limit),
         Commands::Policy { command } => policy_command(&root, command),
         Commands::Maintenance { command } => maintenance_command(command),
+        Commands::Service { command } => service_command(command),
         Commands::Daemon { command } => daemon_command(command),
+    }
+}
+
+fn service_command(command: ServiceCommands) -> Result<u8> {
+    system_policy::require_root()?;
+    let (unit, operation) = match command {
+        ServiceCommands::Start { unit } => (unit, ServiceControlOperation::Start),
+        ServiceCommands::Stop { unit } => (unit, ServiceControlOperation::Stop),
+        ServiceCommands::Restart { unit } => (unit, ServiceControlOperation::Restart),
+    };
+    osmanthus_guard::systemd_control::require_canonical_service(&unit)?;
+    let code = Zeroizing::new(rpassword::prompt_password("Authenticator code: ")?);
+    match daemon_request(RequestBody::ServiceControl {
+        unit: unit.clone(),
+        operation,
+        authenticator_code: code.to_string(),
+    })? {
+        ResponseBody::ServiceControlRequested => {
+            println!(
+                "systemd {} request accepted for {unit}; inspect `systemctl status {unit}` for completion.",
+                operation.systemctl_verb()
+            );
+            Ok(0)
+        }
+        other => unexpected_daemon_response(other),
     }
 }
 
@@ -727,6 +805,15 @@ fn policy_command(root: &Path, command: PolicyCommands) -> Result<u8> {
                     .join(",");
                 println!("protected-root\t{}\t{actions}", root.path().display());
             }
+            for service in policy.protected_services {
+                let actions = service
+                    .actions()
+                    .iter()
+                    .map(|action| format!("{action:?}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("protected-service\t{}\t{actions}", service.unit());
+            }
             for uid in policy.monitored_uids {
                 let shell = policy
                     .monitored_shells
@@ -785,6 +872,35 @@ fn policy_command(root: &Path, command: PolicyCommands) -> Result<u8> {
                         removed.path().display().to_string(),
                         "protected_root_removed",
                         "Removed protected filesystem root",
+                    ))
+                })
+            }
+        },
+        PolicyCommands::Service { command } => match command {
+            PolicyServiceCommands::Add { unit, actions } => {
+                osmanthus_guard::systemd_control::require_canonical_service(&unit)?;
+                mutate_system_policy("service add", |policy_file| {
+                    let service = ProtectedService::new(
+                        unit.clone(),
+                        actions.iter().copied().map(Into::into).collect(),
+                    )?;
+                    let display = service.unit().to_owned();
+                    policy_file.add_protected_service(service)?;
+                    Ok((
+                        display,
+                        "protected_service_added",
+                        "Added protected systemd service",
+                    ))
+                })
+            }
+            PolicyServiceCommands::Remove { unit } => {
+                osmanthus_guard::enforcement::validate_systemd_service_name(&unit)?;
+                mutate_system_policy("service remove", |policy_file| {
+                    let removed = policy_file.remove_protected_service(&unit)?;
+                    Ok((
+                        removed.unit().to_owned(),
+                        "protected_service_removed",
+                        "Removed protected systemd service",
                     ))
                 })
             }
@@ -1065,11 +1181,13 @@ fn change_login_shell(from: &PolicyFile, to: &PolicyFile) -> Result<()> {
 }
 
 fn reload_daemon_policy(policy: &PolicyFile) -> Result<()> {
-    let enforcement = osmanthus_guard::enforcement::EnforcementPolicy::from_parts_with_maintenance(
-        policy.protected_roots.clone(),
-        policy.monitored_uids.clone(),
-        policy.maintenance,
-    )?;
+    let enforcement =
+        osmanthus_guard::enforcement::EnforcementPolicy::from_parts_with_services_and_maintenance(
+            policy.protected_roots.clone(),
+            policy.protected_services.clone(),
+            policy.monitored_uids.clone(),
+            policy.maintenance,
+        )?;
     match daemon_request(RequestBody::PolicyReload {
         policy: enforcement,
     })? {

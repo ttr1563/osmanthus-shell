@@ -25,6 +25,9 @@ path; both still reach the inode attribute change before the file size changes.
 ```text
 process
   ├─ execve/execveat ── monitored UID? ── event ring ── osmanthusd ── JSONL
+  ├─ systemd runtime request ── Polkit helper ── active daemon policy
+  │                                      ├─ unrelated ── existing host policy
+  │                                      └─ protected ── deny + JSONL
   └─ filesystem operation
        └─ BPF LSM walks target ancestors
             ├─ no protected key ── allow
@@ -67,6 +70,31 @@ recursively rejects existing hard-linked non-directory entries. Candidate
 boundary keys are installed before that scan, so a concurrent link cannot be
 created between validation and activation. Symbolic links are not followed and
 the scan fails closed after one million entries.
+
+## Service-control boundary
+
+The policy stores canonical `.service` unit names separately from filesystem
+roots. `start` and `stop` are the selectable classes. Restart variants require
+approval when either their stop or start phase is protected; kill is treated as
+stop. A vendor Polkit rule asks the root-owned `osmanthus-polkit` helper about
+normal `org.freedesktop.systemd1.manage-units` requests. After policy
+initialization, the helper uses the daemon's currently active policy rather than
+the candidate file, so a policy rollback cannot expose a file/reload race. A
+protected denial is recorded before Polkit returns `NO`; daemon, policy, helper,
+or audit failure returns `NO`.
+
+An intentional operation uses `sudo osmanthus service start|stop|restart UNIT`.
+The daemon requires UID 0, verifies the policy-administrator TOTP, records the
+authorization, and invokes absolute `/usr/bin/systemctl` with fixed arguments
+and `--no-block`. The response means that systemd accepted the job request; its
+eventual unit state is checked with `systemctl status`.
+
+This boundary covers direct runtime requests that carry canonical unit and verb
+details through systemd Polkit. systemd 249-255 does not provide per-unit
+details for unit-file enable/disable/mask, and indirect dependency or isolate
+transactions identify the requested anchor rather than every affected unit.
+Those paths are not advertised as protected. Linux root can bypass local
+Polkit, policy, and daemon components and remains outside the threat boundary.
 
 ## Policy integrity
 

@@ -82,6 +82,26 @@ fn ssm_session_document_uses_only_the_audited_linux_entry_point() {
 }
 
 #[test]
+fn service_control_help_exposes_policy_and_authenticated_runtime_paths() {
+    let temp = TempDir::new().unwrap();
+    osmanthus(temp.path())
+        .args(["service", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("start"))
+        .stdout(predicate::str::contains("stop"))
+        .stdout(predicate::str::contains("restart"));
+    osmanthus(temp.path())
+        .args(["policy", "service", "add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--unit"))
+        .stdout(predicate::str::contains("--action"))
+        .stdout(predicate::str::contains("start"))
+        .stdout(predicate::str::contains("stop"));
+}
+
+#[test]
 fn init_creates_private_state_and_status() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("state");

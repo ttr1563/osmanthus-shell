@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{self, POLICY_FILE};
-use crate::enforcement::{EnforcementPolicy, MaintenanceSettings, ProtectedAction, ProtectedRoot};
+use crate::enforcement::{
+    EnforcementPolicy, MaintenanceSettings, ProtectedAction, ProtectedRoot, ProtectedService,
+    ServiceAction,
+};
 use crate::{OsmanthusError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +41,8 @@ pub struct PolicyFile {
     #[serde(default)]
     pub protected_roots: Vec<ProtectedRoot>,
     #[serde(default)]
+    pub protected_services: Vec<ProtectedService>,
+    #[serde(default)]
     pub monitored_uids: std::collections::BTreeSet<u32>,
     #[serde(default)]
     pub monitored_shells: std::collections::BTreeMap<u32, PathBuf>,
@@ -51,6 +56,7 @@ impl Default for PolicyFile {
             schema_version: 1,
             rules: Vec::new(),
             protected_roots: Vec::new(),
+            protected_services: Vec::new(),
             monitored_uids: std::collections::BTreeSet::new(),
             monitored_shells: std::collections::BTreeMap::new(),
             maintenance: MaintenanceSettings::default(),
@@ -127,6 +133,55 @@ impl PolicyFile {
         Ok(self.protected_roots.remove(index))
     }
 
+    pub fn add_protected_service(&mut self, service: ProtectedService) -> Result<()> {
+        if self
+            .protected_services
+            .iter()
+            .any(|existing| existing.unit() == service.unit())
+        {
+            return Err(OsmanthusError::InvalidState(format!(
+                "protected service already exists: {}",
+                service.unit()
+            )));
+        }
+        let mut candidate = self.clone();
+        candidate.protected_services.push(service);
+        candidate
+            .protected_services
+            .sort_by(|left, right| left.unit().cmp(right.unit()));
+        candidate.validate()?;
+        *self = candidate;
+        Ok(())
+    }
+
+    pub fn remove_protected_service(&mut self, unit: &str) -> Result<ProtectedService> {
+        let index = self
+            .protected_services
+            .iter()
+            .position(|service| service.unit() == unit)
+            .ok_or_else(|| {
+                OsmanthusError::InvalidState(format!("protected service not found: {unit}"))
+            })?;
+        Ok(self.protected_services.remove(index))
+    }
+
+    pub fn protects_service_action(&self, unit: &str, action: ServiceAction) -> bool {
+        self.protected_services
+            .iter()
+            .any(|service| service.unit() == unit && service.actions().contains(&action))
+    }
+
+    pub fn protects_service_operation(
+        &self,
+        unit: &str,
+        operation: crate::enforcement::ServiceControlOperation,
+    ) -> bool {
+        operation
+            .actions()
+            .iter()
+            .any(|action| self.protects_service_action(unit, *action))
+    }
+
     pub fn protected_actions_for_scope(&self, scope: &Path) -> Result<Vec<ProtectedAction>> {
         let root = self
             .protected_roots
@@ -199,8 +254,9 @@ impl PolicyFile {
                 )));
             }
         }
-        EnforcementPolicy::from_parts_with_maintenance(
+        EnforcementPolicy::from_parts_with_services_and_maintenance(
             self.protected_roots.clone(),
+            self.protected_services.clone(),
             self.monitored_uids.clone(),
             self.maintenance,
         )?;
@@ -616,10 +672,36 @@ mod tests {
         let policy: PolicyFile =
             serde_json::from_str(r#"{"schema_version":1,"rules":[]}"#).unwrap();
         assert!(policy.protected_roots.is_empty());
+        assert!(policy.protected_services.is_empty());
         assert!(policy.monitored_uids.is_empty());
         assert!(policy.monitored_shells.is_empty());
         assert_eq!(policy.maintenance, MaintenanceSettings::default());
         policy.validate().unwrap();
+    }
+
+    #[test]
+    fn protected_services_are_unique_and_operation_aware() {
+        let mut policy = PolicyFile::default();
+        let service = ProtectedService::new(
+            "postgresql.service",
+            [ServiceAction::Stop].into_iter().collect(),
+        )
+        .unwrap();
+        policy.add_protected_service(service.clone()).unwrap();
+        assert!(policy.protects_service_action("postgresql.service", ServiceAction::Stop));
+        assert!(policy.protects_service_operation(
+            "postgresql.service",
+            crate::enforcement::ServiceControlOperation::Restart
+        ));
+        assert!(!policy.protects_service_action("postgresql.service", ServiceAction::Start));
+        assert!(policy.add_protected_service(service).is_err());
+        assert_eq!(
+            policy
+                .remove_protected_service("postgresql.service")
+                .unwrap()
+                .unit(),
+            "postgresql.service"
+        );
     }
 
     #[test]

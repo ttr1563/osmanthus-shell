@@ -58,9 +58,11 @@ not require an `osmanthus run -- ...` prefix.
 ## Protected resources and maintenance
 
 A policy names canonical absolute roots and the destructive operation classes
-guarded below them. Initial operation classes are deletion, rename or move,
-    open-time or direct truncate, opt-in non-truncating write, ownership or mode change, and separately
-named service-control operations. Read-only access and unrelated paths are not
+guarded below them. Initial filesystem operation classes are deletion, rename
+or move, open-time or direct truncate, opt-in non-truncating write, and
+ownership or mode change. A separate policy names systemd services and direct
+runtime start/stop classes; restart and kill are treated as stop-capable
+operations. Read-only access, unrelated paths, and unrelated services are not
 blocked merely because Osmanthus is installed.
 
 Shell command patterns provide early detection and a useful event description.
@@ -138,6 +140,11 @@ satisfy pre-execution blocking.
   they can change or expose a protected tree.
 - A harmless command and destructive work outside protected roots remain
   available unless another explicit policy applies.
+- Direct `systemctl` and equivalent systemd D-Bus stop/restart requests for a
+  named protected service are denied to a non-root caller. The authenticated
+  Osmanthus service-control command records the decision before requesting the
+  fixed unit and operation from systemd. An unrelated service remains subject
+  to the host's existing authorization policy.
 - A valid maintenance lease allows only its named roots, operation classes, and
   bound cgroup; another cgroup, an expired lease, or an operation outside its
   scope remains denied.
@@ -158,5 +165,8 @@ satisfy pre-execution blocking.
   backend's bounded ancestor walk; the supported limit is documented and
   verified on every supported kernel.
 - Linux is not declared complete until these gates pass on a packaged system.
+- Per-unit enable/disable/mask and dependency/isolate side effects are not
+  accepted as protected operations on systemd versions that do not expose the
+  affected protected unit to Polkit. Linux root remains outside this boundary.
 - Windows Server is not declared complete until equivalent native integration
   tests pass on a supported Windows Server host.

@@ -64,6 +64,33 @@ the selected root. Osmanthus rejects such a root and always blocks creation of
 hard links into or out of an active protected tree. Maintenance does not relax
 this topology rule.
 
+## Protected systemd services
+
+Register the canonical `.service` unit and the direct runtime operations that
+require TOTP:
+
+```bash
+sudo osmanthus policy service add \
+  --unit postgresql.service \
+  --action stop
+
+systemctl restart postgresql.service   # expected: denied for non-root
+sudo osmanthus service restart postgresql.service
+systemctl status postgresql.service
+```
+
+Protect `start` separately when activation also needs approval. Stop protection
+also covers kill and restart variants. The authenticated command submits a
+non-blocking systemd job; verify its final state explicitly. Direct denials,
+authorization, accepted requests, and failures are written to the daemon JSONL.
+
+Do not grant the protected operator unrestricted `sudo systemctl`, D-Bus, or
+write access to the policy, Polkit rule, helper, daemon, or unit files. Root is
+outside the threat boundary. Per-unit enable/disable/mask and stops caused
+indirectly by another dependency or isolate transaction are not protected on
+the supported systemd versions. Keep those operations in separate root-only
+deployment controls.
+
 Verify both sides of the boundary with disposable files. Never select `/`, a
 symlink, or an untested production root for the first check.
 

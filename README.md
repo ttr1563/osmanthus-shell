@@ -29,6 +29,9 @@ authentication.
   leases are memory-only and disappear on restart.
 - Rejects hard links into or out of a protected tree and refuses to enroll a
   tree that already contains hard-linked non-directory entries.
+- Denies direct start, stop, kill, and restart requests for selected systemd
+  services through Polkit. An administrator uses the TOTP-authenticated
+  `osmanthus service` path when the operation is intentional.
 
 Osmanthus does not protect a host after root, the kernel, or the boot trust chain is
 compromised. It does not hide policy values: integrity comes from root ownership,
@@ -79,7 +82,9 @@ cargo build --release --locked
 sudo install -m 0755 target/release/osmanthus /usr/bin/osmanthus
 sudo install -m 0755 target/release/osmanthusd /usr/bin/osmanthusd
 sudo install -m 0755 target/release/osmanthus-shell /usr/bin/osmanthus-shell
+sudo install -D -m 0755 target/release/osmanthus-polkit /usr/libexec/osmanthus-polkit
 sudo install -m 0644 ops/systemd/osmanthusd.service /usr/lib/systemd/system/osmanthusd.service
+sudo install -D -m 0644 ops/polkit/00-osmanthus.rules /usr/share/polkit-1/rules.d/00-osmanthus.rules
 sudo install -m 0644 ops/logrotate/osmanthus /etc/logrotate.d/osmanthus
 sudo install -D -m 0644 ops/ssm/osmanthus-session.json /usr/share/osmanthus/ssm/osmanthus-session.json
 ```
@@ -200,6 +205,22 @@ rm -rf /srv/production/releases/old
 The process can start, but the protected resource operation is denied before
 the target changes. Destructive work outside configured roots remains usable.
 
+Protect a canonical systemd service and require TOTP for its direct runtime
+control:
+
+```bash
+sudo osmanthus policy service add --unit postgresql.service --action stop
+systemctl restart postgresql.service   # denied for a non-root caller
+sudo osmanthus service restart postgresql.service
+```
+
+`restart`, `try-restart`, `reload-or-restart`, and `kill` are treated as
+stop-capable operations. Add `--action start` when service activation must also
+require TOTP. Osmanthus does not mediate root: do not grant operators arbitrary
+`sudo systemctl` access if this boundary is required. systemd 249-255 does not
+provide per-unit Polkit details for enable, disable, or mask, so those unit-file
+operations and indirect dependency/isolate stops are not claimed as protected.
+
 `osmanthus check -- ...` and `osmanthus run -- ...` remain compatibility and diagnostic
 commands. They are not required by, and do not prove, kernel enforcement.
 
@@ -275,6 +296,7 @@ are completed and tested from packages:
 - a documented break-glass restore test for a lost policy-administrator authenticator;
 - packaged verification of opt-in non-truncating writes and long maintenance on
   every advertised architecture;
+- packaged Polkit/D-Bus verification for protected and unrelated systemd services;
 - install and rollback from public, dedicated Osmanthus RPM and deb signing
   identities and repository metadata.
 

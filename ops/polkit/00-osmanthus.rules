@@ -1,0 +1,27 @@
+polkit.addRule(function(action, subject) {
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    var pid = subject.pid;
+    if (unit === undefined || verb === undefined || pid === undefined) {
+        return polkit.Result.NO;
+    }
+
+    try {
+        var result = polkit.spawn([
+            "/usr/libexec/osmanthus-polkit",
+            String(unit),
+            String(verb),
+            String(pid)
+        ]).trim();
+        if (result === "pass") {
+            return polkit.Result.NOT_HANDLED;
+        }
+        return polkit.Result.NO;
+    } catch (error) {
+        return polkit.Result.NO;
+    }
+});

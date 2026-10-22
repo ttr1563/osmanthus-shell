@@ -10,6 +10,8 @@ pub const DEFAULT_MAINTENANCE_SECONDS: i64 = 300;
 pub const DEFAULT_MAX_MAINTENANCE_SECONDS: i64 = 1_800;
 pub const MAX_MAINTENANCE_SECONDS: i64 = 86_400;
 const MAX_PROTECTED_ROOTS: usize = 256;
+const MAX_PROTECTED_SERVICES: usize = 256;
+pub const OSMANTHUSD_SERVICE: &str = "osmanthusd.service";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +21,50 @@ pub enum ProtectedAction {
     Truncate,
     Write,
     ChangePermissions,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceAction {
+    Start,
+    Stop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceControlOperation {
+    Start,
+    Stop,
+    Restart,
+}
+
+impl ServiceControlOperation {
+    pub fn actions(self) -> &'static [ServiceAction] {
+        match self {
+            Self::Start => &[ServiceAction::Start],
+            Self::Stop => &[ServiceAction::Stop],
+            Self::Restart => &[ServiceAction::Stop, ServiceAction::Start],
+        }
+    }
+
+    pub fn systemctl_verb(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Restart => "restart",
+        }
+    }
+}
+
+pub fn service_operation_for_systemd_verb(verb: &str) -> Option<ServiceControlOperation> {
+    match verb {
+        "start" => Some(ServiceControlOperation::Start),
+        "stop" | "kill" => Some(ServiceControlOperation::Stop),
+        "restart" | "try-restart" | "reload-or-restart" | "reload-or-try-restart" => {
+            Some(ServiceControlOperation::Restart)
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +105,46 @@ pub struct ProtectedRoot {
     actions: BTreeSet<ProtectedAction>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProtectedService {
+    unit: String,
+    actions: BTreeSet<ServiceAction>,
+}
+
+impl ProtectedService {
+    pub fn new(unit: impl Into<String>, actions: BTreeSet<ServiceAction>) -> Result<Self> {
+        let unit = unit.into();
+        validate_systemd_service_name(&unit)?;
+        if unit == OSMANTHUSD_SERVICE {
+            return Err(OsmanthusError::InvalidState(format!(
+                "{OSMANTHUSD_SERVICE} is always protected; use authenticated decommission for removal"
+            )));
+        }
+        if actions.is_empty() {
+            return Err(OsmanthusError::InvalidState(
+                "a protected service requires at least one action".to_owned(),
+            ));
+        }
+        Ok(Self { unit, actions })
+    }
+
+    pub fn unit(&self) -> &str {
+        &self.unit
+    }
+
+    pub fn actions(&self) -> &BTreeSet<ServiceAction> {
+        &self.actions
+    }
+
+    fn protects(&self, unit: &str, operation: ServiceControlOperation) -> bool {
+        self.unit == unit
+            && operation
+                .actions()
+                .iter()
+                .any(|action| self.actions.contains(action))
+    }
+}
+
 impl ProtectedRoot {
     pub fn new(path: impl AsRef<Path>, actions: BTreeSet<ProtectedAction>) -> Result<Self> {
         let path = normalize_absolute(path.as_ref())?;
@@ -93,6 +179,8 @@ pub struct EnforcementPolicy {
     pub schema_version: u32,
     pub protected_roots: Vec<ProtectedRoot>,
     #[serde(default)]
+    pub protected_services: Vec<ProtectedService>,
+    #[serde(default)]
     pub monitored_uids: BTreeSet<u32>,
     #[serde(default)]
     pub maintenance: MaintenanceSettings,
@@ -119,9 +207,24 @@ impl EnforcementPolicy {
         monitored_uids: BTreeSet<u32>,
         maintenance: MaintenanceSettings,
     ) -> Result<Self> {
+        Self::from_parts_with_services_and_maintenance(
+            protected_roots,
+            Vec::new(),
+            monitored_uids,
+            maintenance,
+        )
+    }
+
+    pub fn from_parts_with_services_and_maintenance(
+        protected_roots: Vec<ProtectedRoot>,
+        protected_services: Vec<ProtectedService>,
+        monitored_uids: BTreeSet<u32>,
+        maintenance: MaintenanceSettings,
+    ) -> Result<Self> {
         let policy = Self {
             schema_version: 1,
             protected_roots,
+            protected_services,
             monitored_uids,
             maintenance,
         };
@@ -142,6 +245,11 @@ impl EnforcementPolicy {
                 "enforcement policy contains more than {MAX_PROTECTED_ROOTS} protected roots"
             )));
         }
+        if self.protected_services.len() > MAX_PROTECTED_SERVICES {
+            return Err(OsmanthusError::InvalidState(format!(
+                "enforcement policy contains more than {MAX_PROTECTED_SERVICES} protected services"
+            )));
+        }
         if self.monitored_uids.len() > 256 {
             return Err(OsmanthusError::InvalidState(
                 "enforcement policy contains more than 256 monitored UIDs".to_owned(),
@@ -159,6 +267,16 @@ impl EnforcementPolicy {
                 return Err(OsmanthusError::InvalidState(format!(
                     "duplicate protected root: {}",
                     root.path().display()
+                )));
+            }
+        }
+        let mut units = BTreeSet::new();
+        for service in &self.protected_services {
+            ProtectedService::new(service.unit(), service.actions().clone())?;
+            if !units.insert(service.unit()) {
+                return Err(OsmanthusError::InvalidState(format!(
+                    "duplicate protected service: {}",
+                    service.unit()
                 )));
             }
         }
@@ -252,6 +370,7 @@ pub enum EnforcementDecision {
 #[derive(Debug, Default)]
 pub struct EnforcementEngine {
     protected_roots: Vec<ProtectedRoot>,
+    protected_services: Vec<ProtectedService>,
     monitored_uids: BTreeSet<u32>,
     maintenance: MaintenanceSettings,
     maintenance_leases: Vec<MaintenanceLease>,
@@ -261,6 +380,7 @@ impl EnforcementEngine {
     pub fn from_policy(policy: &EnforcementPolicy) -> Result<Self> {
         policy.validate()?;
         let mut engine = Self::new(policy.protected_roots.clone());
+        engine.protected_services = policy.protected_services.clone();
         engine.monitored_uids = policy.monitored_uids.clone();
         engine.maintenance = policy.maintenance;
         Ok(engine)
@@ -277,6 +397,7 @@ impl EnforcementEngine {
         });
         Self {
             protected_roots,
+            protected_services: Vec::new(),
             monitored_uids: BTreeSet::new(),
             maintenance: MaintenanceSettings::default(),
             maintenance_leases: Vec::new(),
@@ -334,6 +455,7 @@ impl EnforcementEngine {
         EnforcementPolicy {
             schema_version: 1,
             protected_roots: self.protected_roots.clone(),
+            protected_services: self.protected_services.clone(),
             monitored_uids: self.monitored_uids.clone(),
             maintenance: self.maintenance,
         }
@@ -345,6 +467,16 @@ impl EnforcementEngine {
 
     pub fn monitors_uid(&self, uid: u32) -> bool {
         self.monitored_uids.contains(&uid)
+    }
+
+    pub fn protects_service_operation(
+        &self,
+        unit: &str,
+        operation: ServiceControlOperation,
+    ) -> bool {
+        self.protected_services
+            .iter()
+            .any(|service| service.protects(unit, operation))
     }
 
     pub fn expire_maintenance(&mut self, now_unix: i64) -> Vec<MaintenanceLease> {
@@ -386,6 +518,26 @@ impl EnforcementEngine {
             protected_root: root.path.clone(),
         }
     }
+}
+
+pub fn validate_systemd_service_name(unit: &str) -> Result<()> {
+    let stem = unit.strip_suffix(".service").ok_or_else(|| {
+        OsmanthusError::InvalidState(
+            "protected service must use a canonical .service unit name".to_owned(),
+        )
+    })?;
+    if stem.is_empty()
+        || unit.len() > 256
+        || !unit.is_ascii()
+        || !stem.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'_' | b'-' | b'.' | b'@')
+        })
+    {
+        return Err(OsmanthusError::InvalidState(format!(
+            "invalid canonical systemd service name: {unit}"
+        )));
+    }
+    Ok(())
 }
 
 fn normalize_absolute(path: &Path) -> Result<PathBuf> {
@@ -526,6 +678,62 @@ mod tests {
         )
         .unwrap();
         assert!(engine.grant_maintenance(lease).is_err());
+    }
+
+    #[test]
+    fn service_restart_is_protected_when_stop_is_protected() {
+        let policy = EnforcementPolicy::from_parts_with_services_and_maintenance(
+            Vec::new(),
+            vec![
+                ProtectedService::new(
+                    "postgresql.service",
+                    [ServiceAction::Stop].into_iter().collect(),
+                )
+                .unwrap(),
+            ],
+            BTreeSet::new(),
+            MaintenanceSettings::default(),
+        )
+        .unwrap();
+        let engine = EnforcementEngine::from_policy(&policy).unwrap();
+        assert!(
+            engine.protects_service_operation("postgresql.service", ServiceControlOperation::Stop)
+        );
+        assert!(
+            engine
+                .protects_service_operation("postgresql.service", ServiceControlOperation::Restart)
+        );
+        assert!(
+            !engine
+                .protects_service_operation("postgresql.service", ServiceControlOperation::Start)
+        );
+    }
+
+    #[test]
+    fn systemd_verbs_map_to_their_effective_service_operation() {
+        assert_eq!(
+            service_operation_for_systemd_verb("kill"),
+            Some(ServiceControlOperation::Stop)
+        );
+        assert_eq!(
+            service_operation_for_systemd_verb("reload-or-restart"),
+            Some(ServiceControlOperation::Restart)
+        );
+        assert_eq!(service_operation_for_systemd_verb("reload"), None);
+    }
+
+    #[test]
+    fn service_names_and_self_protection_are_validated() {
+        assert!(validate_systemd_service_name("postgresql@15.service").is_ok());
+        assert!(validate_systemd_service_name("../postgresql.service").is_err());
+        assert!(validate_systemd_service_name("postgresql.socket").is_err());
+        assert!(
+            ProtectedService::new(
+                OSMANTHUSD_SERVICE,
+                [ServiceAction::Stop].into_iter().collect()
+            )
+            .is_err()
+        );
     }
 
     #[test]
