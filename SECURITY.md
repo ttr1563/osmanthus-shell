@@ -30,8 +30,10 @@ boot chain. Such an identity can replace local policy, code, BPF state, and audi
 records. TOTP provides a separately held approval factor but is not proof of
 physical presence.
 
-Current operation classes cover deletion, rename or move, `O_TRUNC`, opt-in
-ordinary writes and writable shared mappings, and ownership or mode changes.
+Current operation classes cover deletion, rename or move, path-based and
+descriptor-based truncation including `O_TRUNC`, opt-in ordinary writes and
+writable shared mappings, and ownership or mode changes. Hard links across a
+protected boundary and mounts below a protected root are denied independently.
 Maintenance leases additionally require the current kernel cgroup. Native
 Windows Server enforcement is a separate, unimplemented platform track; WSL
 does not provide that coverage.
