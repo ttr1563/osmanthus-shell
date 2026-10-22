@@ -257,7 +257,8 @@ sudo dnf remove osmanthus        # or: sudo apt-get remove osmanthus
 
 The package uninstall script refuses while `/sys/fs/bpf/osmanthus` exists or an
 account still uses `/usr/bin/osmanthus-shell`. Ordinary `systemctl stop` does not
-remove pinned enforcement. Audit and policy files are retained for recovery.
+remove pinned enforcement. After those checks pass, package removal stops and
+disables the systemd unit. Audit and policy files are retained for recovery.
 
 ## Incident boundary
 

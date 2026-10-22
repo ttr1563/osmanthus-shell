@@ -42,7 +42,7 @@ sudo osmanthus policy monitor add 1001 --shell /bin/bash</code></pre><p>最初�
       <section><h2>remote接続</h2><p>登録accountのOpenSSH・local loginは<code>osmanthus-shell</code>を通ります。AWS SSMはlogin shellを迂回できるため、repositoryの<a href="https://github.com/ttr1563/osmanthus-shell/blob/main/docs/ssm.md">専用Session document手順</a>を使用します。operatorがそのdocumentだけを開始でき、更新はできないようIAMを制限します。</p></section>
       <section><h2>移行・rollback・削除</h2><p>Osmanthusは従来Onyxのstateを自動importしません。導入前に<code>/usr/bin/onyx-shell</code>を使用するaccountを復元し、対応するOnyx binaryで<code>/sys/fs/bpf/onyx</code>をdecommissionしてください。旧kernel backendが残る間はOsmanthusの起動を拒否します。</p><p>同一ABIのBPF更新はreplacement linkとpin昇格を使います。非互換ABIは旧enforcementをattachしたまま拒否されるため、旧packageへrollbackするか、認証付きの保守・decommission・fresh attachを行います。</p><pre><code>sudo osmanthus policy monitor remove 1001
 sudo osmanthus daemon decommission
-sudo dnf remove osmanthus        # または: sudo apt-get remove osmanthus</code></pre><p>OsmanthusのBPF pinまたは管理login shellが残る間、uninstallは拒否されます。policy・state・audit証跡は保持します。rollback・削除前に<a href="https://github.com/ttr1563/osmanthus-shell/blob/main/docs/operations.md">運用runbook</a>を確認してください。</p></section>
+sudo dnf remove osmanthus        # または: sudo apt-get remove osmanthus</code></pre><p>OsmanthusのBPF pinまたは管理login shellが残る間、uninstallは拒否されます。検査通過後のpackage削除はsystemd unitを停止・無効化します。policy・state・audit証跡は保持します。rollback・削除前に<a href="https://github.com/ttr1563/osmanthus-shell/blob/main/docs/operations.md">運用runbook</a>を確認してください。</p></section>
     </main>
     <footer><p>OsmanthusはMIT Licenseのオープンソースです。</p><a href="./">Osmanthusへ戻る</a></footer>
   </body>

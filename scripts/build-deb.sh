@@ -131,6 +131,9 @@ if [ "$1" = remove ]; then
     echo "osmanthus: restore monitored login shells before uninstall" >&2
     exit 1
   fi
+  if [ -d /run/systemd/system ]; then
+    systemctl disable --now osmanthusd.service
+  fi
 fi
 exit 0
 EOF

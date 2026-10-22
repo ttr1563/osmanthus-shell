@@ -53,6 +53,7 @@ grep -Fx "Architecture: $deb_architecture" "$temporary/control"
 grep -Fx "Conflicts: onyx" "$temporary/control"
 grep -Fq "/sys/fs/bpf/osmanthus" "$temporary/prerm"
 grep -Fq "/usr/bin/osmanthus-shell" "$temporary/prerm"
+grep -Fq "systemctl disable --now osmanthusd.service" "$temporary/prerm"
 fixture_bin="$temporary/fixture-bin"
 mkdir -p "$fixture_bin"
 printf '%s\n' \
@@ -67,6 +68,8 @@ printf '%s\n' \
   'exit 0' \
   > "$fixture_bin/systemctl"
 chmod 0755 "$fixture_bin/getent" "$fixture_bin/systemctl"
+systemctl_log="$temporary/systemctl.log"
+: > "$systemctl_log"
 
 legacy_passwd='legacy:x:1001:1001::/home/legacy:/usr/bin/onyx-shell'
 if PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$legacy_passwd" \
@@ -79,14 +82,24 @@ PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$legacy_passwd" \
 
 monitored_passwd='operator:x:1002:1002::/home/operator:/usr/bin/osmanthus-shell'
 if PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$monitored_passwd" \
+  OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
   "$temporary/prerm" remove >/dev/null 2>&1; then
   echo "Debian prerm accepted a monitored login shell on removal" >&2
   exit 1
 fi
 PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$monitored_passwd" \
+  OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
   "$temporary/prerm" upgrade 0.1.2
+test ! -s "$systemctl_log"
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD='' \
+  OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
+  "$temporary/prerm" remove
+if [[ -d /run/systemd/system ]]; then
+  grep -Fqx 'disable --now osmanthusd.service' "$systemctl_log"
+else
+  test ! -s "$systemctl_log"
+fi
 
-systemctl_log="$temporary/systemctl.log"
 : > "$systemctl_log"
 PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
   OSMANTHUS_TEST_ACTIVE_STATUS=1 "$temporary/postinst" configure
