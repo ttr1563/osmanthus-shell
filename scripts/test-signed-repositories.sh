@@ -71,6 +71,36 @@ grep -F 'Osmanthus public key does not match the configured signing identity' \
 )
 scripts/build-apt-repository.sh "$apt_root"
 scripts/verify-apt-repository.sh "$apt_root"
+(
+  cd "$apt_root"
+  find . -type f -print | sort | xargs sha256sum > "$temporary/apt-repository-checksums"
+)
+failure_bin="$temporary/failure-bin"
+mkdir -p "$failure_bin"
+real_gpg="$(command -v gpg)"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'for argument in "$@"; do' \
+  '  case "$argument" in *SHA256SUMS*) exit 98 ;; esac' \
+  'done' \
+  'exec "$OSMANTHUS_REAL_GPG" "$@"' \
+  > "$failure_bin/gpg"
+chmod 0755 "$failure_bin/gpg"
+if OSMANTHUS_REAL_GPG="$real_gpg" PATH="$failure_bin:$PATH" \
+  scripts/build-apt-repository.sh "$apt_root" \
+  >"$temporary/apt-staged-failure-output" 2>&1; then
+  echo 'APT repository publication accepted a checksum signing failure' >&2
+  exit 1
+fi
+(
+  cd "$apt_root"
+  sha256sum --check "$temporary/apt-repository-checksums"
+)
+if find "$(dirname "$apt_root")" -maxdepth 1 -type d \
+  -name ".$(basename "$apt_root").osmanthus-stage.*" -print -quit | grep -q .; then
+  echo 'failed APT repository publication left a staging directory' >&2
+  exit 1
+fi
 scripts/build-rpm-repository.sh "$rpm_root"
 (
   cd "$rpm_root"
@@ -80,8 +110,6 @@ scripts/build-rpm-repository.sh "$rpm_root"
   } | xargs sha256sum > "$temporary/rpm-package-checksums"
   find . -type f -print | sort | xargs sha256sum > "$temporary/rpm-repository-checksums"
 )
-failure_bin="$temporary/failure-bin"
-mkdir -p "$failure_bin"
 printf '#!/bin/sh\nexit 97\n' > "$failure_bin/createrepo_c"
 chmod 0755 "$failure_bin/createrepo_c"
 if PATH="$failure_bin:$PATH" scripts/build-rpm-repository.sh "$rpm_root" \
