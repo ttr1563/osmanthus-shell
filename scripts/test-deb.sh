@@ -65,6 +65,7 @@ printf '%s\n' \
   '#!/bin/sh' \
   'printf "%s\n" "$*" >> "$OSMANTHUS_TEST_SYSTEMCTL_LOG"' \
   'if [ "$1" = is-active ]; then exit "${OSMANTHUS_TEST_ACTIVE_STATUS:-1}"; fi' \
+  'if [ "$1" = is-enabled ]; then exit "${OSMANTHUS_TEST_ENABLED_STATUS:-1}"; fi' \
   'exit 0' \
   > "$fixture_bin/systemctl"
 chmod 0755 "$fixture_bin/getent" "$fixture_bin/systemctl"
@@ -102,17 +103,32 @@ fi
 
 : > "$systemctl_log"
 PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
-  OSMANTHUS_TEST_ACTIVE_STATUS=1 "$temporary/postinst" configure
+  OSMANTHUS_TEST_ACTIVE_STATUS=1 OSMANTHUS_TEST_ENABLED_STATUS=1 \
+  "$temporary/postinst" configure
 grep -Fqx 'daemon-reload' "$systemctl_log"
 grep -Fqx 'is-active --quiet osmanthusd.service' "$systemctl_log"
+grep -Fqx 'is-enabled --quiet osmanthusd.service' "$systemctl_log"
 ! grep -Fqx 'try-restart osmanthusd.service' "$systemctl_log"
+! grep -Fqx 'restart osmanthusd.service' "$systemctl_log"
 
 : > "$systemctl_log"
 PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
-  OSMANTHUS_TEST_ACTIVE_STATUS=0 "$temporary/postinst" configure
+  OSMANTHUS_TEST_ACTIVE_STATUS=0 OSMANTHUS_TEST_ENABLED_STATUS=1 \
+  "$temporary/postinst" configure
 grep -Fqx 'daemon-reload' "$systemctl_log"
 grep -Fqx 'is-active --quiet osmanthusd.service' "$systemctl_log"
 grep -Fqx 'try-restart osmanthusd.service' "$systemctl_log"
+! grep -Fqx 'is-enabled --quiet osmanthusd.service' "$systemctl_log"
+
+: > "$systemctl_log"
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
+  OSMANTHUS_TEST_ACTIVE_STATUS=1 OSMANTHUS_TEST_ENABLED_STATUS=0 \
+  "$temporary/postinst" configure
+grep -Fqx 'daemon-reload' "$systemctl_log"
+grep -Fqx 'is-active --quiet osmanthusd.service' "$systemctl_log"
+grep -Fqx 'is-enabled --quiet osmanthusd.service' "$systemctl_log"
+grep -Fqx 'restart osmanthusd.service' "$systemctl_log"
+! grep -Fqx 'try-restart osmanthusd.service' "$systemctl_log"
 
 : > "$systemctl_log"
 PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \

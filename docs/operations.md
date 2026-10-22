@@ -237,6 +237,8 @@ Osmanthus does not redact arbitrary terminal content.
 Same-schema program upgrades attach and pin a complete replacement link set
 before promoting it. Startup repairs an interrupted promotion. Package upgrade
 restarts an already-active daemon, which performs this blue-green replacement.
+On Debian-family hosts, installing a rollback package also starts an enabled unit
+left inactive or failed by the rejected upgrade; a disabled unit remains stopped.
 
 The daemon checks the pinned BPF ABI before program replacement. If it reports an
 incompatible ABI, the old links remain attached. Do not remove individual pins.

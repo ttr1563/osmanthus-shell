@@ -115,6 +115,8 @@ if [ -d /run/systemd/system ]; then
   systemctl daemon-reload >/dev/null 2>&1 || true
   if systemctl is-active --quiet osmanthusd.service; then
     systemctl try-restart osmanthusd.service
+  elif systemctl is-enabled --quiet osmanthusd.service; then
+    systemctl restart osmanthusd.service
   fi
 fi
 exit 0
