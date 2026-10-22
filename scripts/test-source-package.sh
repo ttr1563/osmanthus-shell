@@ -51,6 +51,7 @@ for required in \
   scripts/build-rpm.sh \
   scripts/package-source.sh \
   scripts/package-version.sh \
+  scripts/signing-identity.sh \
   scripts/test-deb.sh \
   scripts/test-rpm.sh \
   scripts/test-installed-truncate.sh \

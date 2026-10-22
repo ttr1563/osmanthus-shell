@@ -74,6 +74,9 @@ package or bootstrap RPM must already verify with the configured Osmanthus key;
 otherwise generation stops instead of replacing its signature. The ephemeral
 repository test runs generation twice and confirms that every package checksum
 is unchanged.
+Before the first signature is written, the builder also requires the public key
+file to contain exactly one primary key whose full fingerprint matches the
+selected secret signing key. A mismatch fails without modifying an unsigned RPM.
 
 ## Clean-host release gate
 

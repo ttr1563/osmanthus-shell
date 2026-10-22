@@ -3,6 +3,7 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
+source scripts/signing-identity.sh
 output_root="${1:-docs/apt}"
 output_root="$(realpath -m "$output_root")"
 case "$output_root" in
@@ -31,6 +32,7 @@ if [[ -z "$signing_key" || -z "$gpg_home" ]]; then
   echo "OSMANTHUS_GPG_KEY_ID and OSMANTHUS_GPG_HOME are required" >&2
   exit 1
 fi
+require_osmanthus_signing_identity "$key_file" "$gpg_home" "$signing_key"
 
 pool="$output_root/pool/main/o/osmanthus"
 mapfile -t packages < <(find "$pool" -maxdepth 1 -type f -name 'osmanthus_*.deb' -print | sort -V)

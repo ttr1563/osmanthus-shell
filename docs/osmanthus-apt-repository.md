@@ -67,6 +67,10 @@ release branch. Use a dedicated Osmanthus package-signing key. The private key,
 passphrase, TOTP values, and audit records must never enter Git, command-line
 arguments, Pages artifacts, or logs.
 
+The repository builder verifies that the public key file contains exactly one
+primary key and that its full fingerprint matches the selected secret signing
+key before writing repository metadata.
+
 ```console
 export OSMANTHUS_GPG_HOME=/secure/path/to/osmanthus-signing-home
 export OSMANTHUS_GPG_KEY_ID=<full-fingerprint>
