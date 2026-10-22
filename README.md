@@ -106,9 +106,10 @@ new version instead. The source archive is generated from committed `HEAD`, not 
 tree, and its test requires two byte-identical builds while excluding historical
 package repositories, build output, and the legacy Homebrew formula.
 The deb builder maps native Linux `x86_64` to Debian `amd64` and `aarch64` to
-`arm64`; it deliberately rejects cross-packaging and unsupported hosts. Native
-ARM64 build, package install, kernel enforcement, scoped maintenance, audit,
-decommission, and uninstall have been verified on Ubuntu 24.04 with kernel 6.8.
+`arm64`. The deb and RPM builders deliberately reject cross-packaging and
+unsupported hosts. Native ARM64 build, package install, kernel enforcement,
+scoped maintenance, audit, decommission, and uninstall have been verified on
+Ubuntu 24.04 with kernel 6.8.
 Each other advertised distribution and architecture still requires its own
 installed-package integration result.
 The legacy Homebrew formula installs Onyx v0.1.3, not Osmanthus.

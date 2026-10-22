@@ -46,7 +46,8 @@ scripts/test-rpm.sh 0.2.0-rc.1 dist/rpm/al2023/x86_64
 The package builder requires a committed clean worktree and refuses to replace
 an existing same-version artifact. Remove disposable local test output
 explicitly before rebuilding it; for any published or accepted artifact, use a
-new RC or patch version instead.
+new RC or patch version instead. It also requires a native Linux `x86_64` or
+`aarch64` build and rejects an RPM target macro that does not match the host.
 
 Place accepted packages in `docs/rpm/al2023/<architecture>/Packages/` only on
 the release branch. Sign with the same dedicated Osmanthus identity used by the

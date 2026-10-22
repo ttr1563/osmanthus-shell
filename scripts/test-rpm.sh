@@ -7,7 +7,20 @@ source scripts/package-version.sh
 
 version="${1:?usage: scripts/test-rpm.sh VERSION [PACKAGE_ROOT]}"
 parse_osmanthus_package_version "$version"
-repository_path="${2:-dist/rpm/$(rpm --eval '%{_target_cpu}')}"
+for command in find grep realpath rpm uname; do
+  command -v "$command" >/dev/null || {
+    echo "required command not found: $command" >&2
+    exit 1
+  }
+done
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "RPM packages must be tested natively on Linux" >&2
+  exit 1
+fi
+host_architecture="$(uname -m)"
+architecture="$(rpm --eval '%{_target_cpu}')"
+require_native_osmanthus_rpm_architecture "$host_architecture" "$architecture"
+repository_path="${2:-dist/rpm/$architecture}"
 repository_path="$(realpath -m "$repository_path")"
 case "$repository_path" in
   "$repository_root/dist"/*) ;;
@@ -20,6 +33,10 @@ package="$(find "$repository_path/Packages" -maxdepth 1 -type f -name "osmanthus
 
 if [[ -z "$package" ]]; then
   echo "Osmanthus RPM is missing" >&2
+  exit 1
+fi
+if [[ "$(rpm -qp --qf '%{ARCH}' "$package")" != "$architecture" ]]; then
+  echo "RPM package architecture does not match native host: $package" >&2
   exit 1
 fi
 

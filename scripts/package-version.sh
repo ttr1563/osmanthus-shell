@@ -48,3 +48,20 @@ require_new_osmanthus_artifact() {
     return 1
   fi
 }
+
+require_native_osmanthus_rpm_architecture() {
+  local host_architecture="${1:?host architecture is required}"
+  local rpm_architecture="${2:?RPM architecture is required}"
+
+  case "$host_architecture" in
+    x86_64 | aarch64) ;;
+    *)
+      echo "unsupported native RPM architecture: $host_architecture" >&2
+      return 1
+      ;;
+  esac
+  if [[ "$rpm_architecture" != "$host_architecture" ]]; then
+    echo "RPM target architecture $rpm_architecture does not match native host $host_architecture" >&2
+    return 1
+  fi
+}

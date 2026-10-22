@@ -30,6 +30,17 @@ if parse_osmanthus_package_version 0.2.0-beta.1 2>/dev/null; then
   exit 1
 fi
 
+require_native_osmanthus_rpm_architecture x86_64 x86_64
+require_native_osmanthus_rpm_architecture aarch64 aarch64
+if require_native_osmanthus_rpm_architecture x86_64 aarch64 2>/dev/null; then
+  echo 'cross-architecture RPM target was accepted' >&2
+  exit 1
+fi
+if require_native_osmanthus_rpm_architecture armv7l armv7l 2>/dev/null; then
+  echo 'unsupported native RPM architecture was accepted' >&2
+  exit 1
+fi
+
 (
   cd "$temporary"
   git init --quiet

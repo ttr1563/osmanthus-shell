@@ -28,21 +28,20 @@ if [[ "$version" != "$manifest_version" ]]; then
   exit 1
 fi
 parse_osmanthus_package_version "$version"
-for command in basename cargo find grep install realpath rpmbuild rpm; do
+for command in basename cargo find grep install realpath rpmbuild rpm uname; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
   }
 done
 
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "RPM packages must be built natively on Linux" >&2
+  exit 1
+fi
+host_architecture="$(uname -m)"
 architecture="$(rpm --eval '%{_target_cpu}')"
-case "$architecture" in
-  x86_64 | aarch64) ;;
-  *)
-    echo "unsupported RPM architecture: $architecture" >&2
-    exit 1
-    ;;
-esac
+require_native_osmanthus_rpm_architecture "$host_architecture" "$architecture"
 package_dir="$output_root/$architecture/Packages"
 if [[ -d "$package_dir" ]] \
   && find "$package_dir" -maxdepth 1 -type f \
