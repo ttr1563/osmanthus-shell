@@ -78,7 +78,26 @@ scripts/build-rpm-repository.sh "$rpm_root"
     printf '%s\n' osmanthus-release-1-1.noarch.rpm
     find al2023 -type f -name 'osmanthus-*.rpm' -print | sort
   } | xargs sha256sum > "$temporary/rpm-package-checksums"
+  find . -type f -print | sort | xargs sha256sum > "$temporary/rpm-repository-checksums"
 )
+failure_bin="$temporary/failure-bin"
+mkdir -p "$failure_bin"
+printf '#!/bin/sh\nexit 97\n' > "$failure_bin/createrepo_c"
+chmod 0755 "$failure_bin/createrepo_c"
+if PATH="$failure_bin:$PATH" scripts/build-rpm-repository.sh "$rpm_root" \
+  >"$temporary/staged-failure-output" 2>&1; then
+  echo 'RPM repository publication accepted a metadata generation failure' >&2
+  exit 1
+fi
+(
+  cd "$rpm_root"
+  sha256sum --check "$temporary/rpm-repository-checksums"
+)
+if find "$(dirname "$rpm_root")" -maxdepth 1 -type d \
+  -name ".$(basename "$rpm_root").osmanthus-stage.*" -print -quit | grep -q .; then
+  echo 'failed RPM repository publication left a staging directory' >&2
+  exit 1
+fi
 if OSMANTHUS_GPG_KEY_ID="$wrong_fingerprint" \
   OSMANTHUS_GPG_PUBLIC_KEY="$wrong_public_key" \
   scripts/build-rpm-repository.sh "$rpm_root" \
