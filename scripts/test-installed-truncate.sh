@@ -33,7 +33,7 @@ done
   exit 1
 }
 
-for command in mktemp python3 realpath; do
+for command in mktemp python3 realpath stat; do
   command -v "$command" >/dev/null || {
     echo "required command not found: $command" >&2
     exit 1
@@ -45,6 +45,48 @@ canonical_root="$(realpath -e -- "$root")"
   echo "protected root must already be canonical: $root (resolved: $canonical_root)" >&2
   exit 1
 }
+if [[ ! -w "$canonical_root" || ! -x "$canonical_root" ]]; then
+  echo "protected root must be writable and searchable by the test identity: $canonical_root" >&2
+  exit 1
+fi
+
+osmanthus_cli=/usr/bin/osmanthus
+if [[ ! -f "$osmanthus_cli" || -L "$osmanthus_cli" || ! -x "$osmanthus_cli" ]]; then
+  echo "installed Osmanthus CLI is missing or unsafe: $osmanthus_cli" >&2
+  exit 1
+fi
+if [[ "$(stat -c '%u %a' "$osmanthus_cli")" != "0 755" ]]; then
+  echo "installed Osmanthus CLI must be root-owned with mode 0755: $osmanthus_cli" >&2
+  exit 1
+fi
+policy_output="$($osmanthus_cli policy list)"
+python3 - "$canonical_root" "$policy_output" <<'PY'
+import pathlib
+import sys
+
+target = pathlib.Path(sys.argv[1])
+lines = sys.argv[2].splitlines()
+if not lines or lines[0] != "Policy source: system":
+    raise SystemExit("installed acceptance requires the root-owned system policy")
+
+covering_actions = set()
+for line in lines:
+    fields = line.split("\t")
+    if len(fields) != 3 or fields[0] != "protected-root":
+        continue
+    protected = pathlib.Path(fields[1])
+    if protected == target or protected in target.parents:
+        covering_actions.update(action for action in fields[2].split(",") if action)
+
+if "Truncate" not in covering_actions:
+    raise SystemExit(f"target is not covered by truncate protection: {target}")
+unexpected = covering_actions - {"Truncate"}
+if unexpected:
+    actions = ",".join(sorted(unexpected))
+    raise SystemExit(
+        f"target is covered by non-truncate actions ({actions}); use a dedicated truncate-only root"
+    )
+PY
 
 temporary="$(mktemp -d "$root/.osmanthus-truncate-e2e.XXXXXX")"
 cleanup() {

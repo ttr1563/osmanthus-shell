@@ -315,7 +315,8 @@ only the `truncate` action, then exercise the daemon-loaded policy rather than t
 transient smoke backend:
 
 ```bash
-sudo install -d -m 0755 /var/tmp/osmanthus-truncate-acceptance
+sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 \
+  /var/tmp/osmanthus-truncate-acceptance
 sudo osmanthus policy protect add \
   --path /var/tmp/osmanthus-truncate-acceptance --action truncate
 scripts/test-installed-truncate.sh \
@@ -324,7 +325,10 @@ scripts/test-installed-truncate.sh \
 ```
 
 The script requires the root to be an existing canonical directory and refuses
-`/`. It creates and removes only a uniquely named child, verifies that
+`/`. The disposable root must be writable by the identity running the test.
+Before changing the root, the script verifies the installed root-owned CLI and
+requires every protected root covering the target to enable only `truncate`.
+It creates and removes only a uniquely named child, verifies that
 `truncate(2)`, descriptor-based `ftruncate(2)`, and `O_TRUNC` preserve the target,
 and verifies that a non-truncating write remains available under a truncate-only
 policy. Run it only in a disposable VM or a reviewed test root; policy removal and

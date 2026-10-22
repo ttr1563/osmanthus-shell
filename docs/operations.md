@@ -80,7 +80,8 @@ each advertised architecture. Register a separate disposable root with only the
 `truncate` action, then run the source-tree acceptance helper:
 
 ```bash
-sudo install -d -m 0755 /var/tmp/osmanthus-truncate-acceptance
+sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 \
+  /var/tmp/osmanthus-truncate-acceptance
 sudo osmanthus policy protect add \
   --path /var/tmp/osmanthus-truncate-acceptance --action truncate
 scripts/test-installed-truncate.sh \
@@ -88,12 +89,16 @@ scripts/test-installed-truncate.sh \
   --acknowledge-disposable-root
 ```
 
-The helper must report a pass for path-based `truncate(2)`, descriptor-based
-`ftruncate(2)`, and `O_TRUNC` denial with unchanged contents, and for an allowed
-non-truncating write. A pass proves only the installed truncate boundary; it does
-not replace package install, audit, maintenance, decommission, or uninstall
-acceptance. Remove the policy and test root through the authenticated lifecycle
-before destroying the disposable VM.
+Run the helper as the owner of the disposable root. Before creating a fixture, it
+verifies the root is writable, checks `/usr/bin/osmanthus` ownership and mode,
+requires the root-owned system policy, and rejects a target covered by any action
+other than `truncate`, including an action inherited from a protected ancestor.
+It must then report a pass for path-based `truncate(2)`,
+descriptor-based `ftruncate(2)`, and `O_TRUNC` denial with unchanged contents,
+and for an allowed non-truncating write. A pass proves only the installed
+truncate boundary; it does not replace package install, audit, maintenance,
+decommission, or uninstall acceptance. Remove the policy and test root through
+the authenticated lifecycle before destroying the disposable VM.
 
 ## Status and evidence
 
