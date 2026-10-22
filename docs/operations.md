@@ -104,6 +104,8 @@ sudo osmanthus policy monitor add "$(id -u operator)" --shell /bin/bash
 
 Keep a tested console/recovery path. `policy monitor remove UID` restores the
 recorded shell and refuses to overwrite unexpected concurrent shell changes.
+Removing the final managed login shell also removes `/usr/bin/osmanthus-shell`
+from `/etc/shells`.
 
 AWS SSM starts `sh` by default and can bypass the account login shell. Follow
 [`docs/ssm.md`](ssm.md) to create a custom Session document that executes

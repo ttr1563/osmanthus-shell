@@ -1042,7 +1042,11 @@ fn change_login_shell(from: &PolicyFile, to: &PolicyFile) -> Result<()> {
             login_shell::set_shell(uid, real_shell, Path::new(login_shell::OSMANTHUS_SHELL))
         }
         (Some(real_shell), None) => {
-            login_shell::set_shell(uid, Path::new(login_shell::OSMANTHUS_SHELL), real_shell)
+            login_shell::set_shell(uid, Path::new(login_shell::OSMANTHUS_SHELL), real_shell)?;
+            if to.monitored_shells.is_empty() {
+                login_shell::unregister()?;
+            }
+            Ok(())
         }
         (None, None) => Ok(()),
         (Some(_), Some(_)) => Err(OsmanthusError::InvalidState(
