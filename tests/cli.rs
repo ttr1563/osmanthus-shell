@@ -25,7 +25,33 @@ fn initialize(root: &Path) {
         .args(["init", "--no-qr", "--account", "test-server"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Osmanthus initialized"));
+        .stdout(predicate::str::contains(
+            "Legacy explicit-wrapper state initialized",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility commands require: osmanthus run -- <command>",
+        ))
+        .stdout(predicate::str::contains(
+            "Linux protected-root enforcement uses: sudo osmanthus policy init",
+        ));
+}
+
+#[test]
+fn top_level_help_marks_init_as_compatibility_mode() {
+    let temp = TempDir::new().unwrap();
+    osmanthus(temp.path())
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Initialize the legacy explicit-wrapper compatibility mode",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility wrapper: evaluate and, when permitted, execute a command",
+        ))
+        .stdout(predicate::str::contains(
+            "Compatibility diagnostic: evaluate without creating an event or executing",
+        ));
 }
 
 #[test]
