@@ -53,6 +53,58 @@ grep -Fx "Architecture: $deb_architecture" "$temporary/control"
 grep -Fx "Conflicts: onyx" "$temporary/control"
 grep -Fq "/sys/fs/bpf/osmanthus" "$temporary/prerm"
 grep -Fq "/usr/bin/osmanthus-shell" "$temporary/prerm"
+fixture_bin="$temporary/fixture-bin"
+mkdir -p "$fixture_bin"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'test "$1" = passwd' \
+  'printf "%s\n" "${OSMANTHUS_TEST_PASSWD:-}"' \
+  > "$fixture_bin/getent"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf "%s\n" "$*" >> "$OSMANTHUS_TEST_SYSTEMCTL_LOG"' \
+  'if [ "$1" = is-active ]; then exit "${OSMANTHUS_TEST_ACTIVE_STATUS:-1}"; fi' \
+  'exit 0' \
+  > "$fixture_bin/systemctl"
+chmod 0755 "$fixture_bin/getent" "$fixture_bin/systemctl"
+
+legacy_passwd='legacy:x:1001:1001::/home/legacy:/usr/bin/onyx-shell'
+if PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$legacy_passwd" \
+  "$temporary/preinst" install >/dev/null 2>&1; then
+  echo "Debian preinst accepted a legacy Onyx login shell on initial install" >&2
+  exit 1
+fi
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$legacy_passwd" \
+  "$temporary/preinst" upgrade 0.1.2
+
+monitored_passwd='operator:x:1002:1002::/home/operator:/usr/bin/osmanthus-shell'
+if PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$monitored_passwd" \
+  "$temporary/prerm" remove >/dev/null 2>&1; then
+  echo "Debian prerm accepted a monitored login shell on removal" >&2
+  exit 1
+fi
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_PASSWD="$monitored_passwd" \
+  "$temporary/prerm" upgrade 0.1.2
+
+systemctl_log="$temporary/systemctl.log"
+: > "$systemctl_log"
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
+  OSMANTHUS_TEST_ACTIVE_STATUS=1 "$temporary/postinst" configure
+grep -Fqx 'daemon-reload' "$systemctl_log"
+grep -Fqx 'is-active --quiet osmanthusd.service' "$systemctl_log"
+! grep -Fqx 'try-restart osmanthusd.service' "$systemctl_log"
+
+: > "$systemctl_log"
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
+  OSMANTHUS_TEST_ACTIVE_STATUS=0 "$temporary/postinst" configure
+grep -Fqx 'daemon-reload' "$systemctl_log"
+grep -Fqx 'is-active --quiet osmanthusd.service' "$systemctl_log"
+grep -Fqx 'try-restart osmanthusd.service' "$systemctl_log"
+
+: > "$systemctl_log"
+PATH="$fixture_bin:$PATH" OSMANTHUS_TEST_SYSTEMCTL_LOG="$systemctl_log" \
+  "$temporary/postrm" remove
+test "$(grep -Fxc 'daemon-reload' "$systemctl_log")" -eq 1
 test -x "$temporary/usr/bin/osmanthus"
 test -x "$temporary/usr/bin/osmanthusd"
 test -x "$temporary/usr/bin/osmanthus-shell"
